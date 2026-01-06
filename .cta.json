@@ -6,7 +6,7 @@
   "packageManager": "bun",
   "addOnOptions": {
     "drizzle": {
-      "database": "sqlite"
+      "database": "mysql"
     }
   },
   "git": true,

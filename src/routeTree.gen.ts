@@ -9,13 +9,44 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AuthRegisterRouteImport } from './routes/auth/register'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
+import { Route as ApiUploadRouteImport } from './routes/api/upload'
+import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
+import { Route as AdminProductsIndexRouteImport } from './routes/admin/products/index'
+import { Route as AdminOrdersIndexRouteImport } from './routes/admin/orders/index'
+import { Route as AdminCustomersIndexRouteImport } from './routes/admin/customers/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AdminProductsVendorsRouteImport } from './routes/admin/products/vendors'
+import { Route as AdminProductsNewRouteImport } from './routes/admin/products/new'
+import { Route as AdminProductsDefinitionsRouteImport } from './routes/admin/products/definitions'
+import { Route as AdminProductsCategoriesRouteImport } from './routes/admin/products/categories'
+import { Route as AdminProductsProductIdRouteImport } from './routes/admin/products/$productId'
+import { Route as AdminOrdersNewRouteImport } from './routes/admin/orders/new'
+import { Route as AdminOrdersOrderIdRouteImport } from './routes/admin/orders/$orderId'
+import { Route as AdminProductsVariantsVariantIdRouteImport } from './routes/admin/products/variants/$variantId'
 
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AuthRegisterRoute = AuthRegisterRouteImport.update({
+  id: '/auth/register',
+  path: '/auth/register',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
@@ -23,49 +54,244 @@ const AuthLoginRoute = AuthLoginRouteImport.update({
   path: '/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiUploadRoute = ApiUploadRouteImport.update({
+  id: '/api/upload',
+  path: '/api/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminSettingsRoute = AdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminProductsIndexRoute = AdminProductsIndexRouteImport.update({
+  id: '/products/',
+  path: '/products/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOrdersIndexRoute = AdminOrdersIndexRouteImport.update({
+  id: '/orders/',
+  path: '/orders/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminCustomersIndexRoute = AdminCustomersIndexRouteImport.update({
+  id: '/customers/',
+  path: '/customers/',
+  getParentRoute: () => AdminRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminProductsVendorsRoute = AdminProductsVendorsRouteImport.update({
+  id: '/products/vendors',
+  path: '/products/vendors',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminProductsNewRoute = AdminProductsNewRouteImport.update({
+  id: '/products/new',
+  path: '/products/new',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminProductsDefinitionsRoute =
+  AdminProductsDefinitionsRouteImport.update({
+    id: '/products/definitions',
+    path: '/products/definitions',
+    getParentRoute: () => AdminRoute,
+  } as any)
+const AdminProductsCategoriesRoute = AdminProductsCategoriesRouteImport.update({
+  id: '/products/categories',
+  path: '/products/categories',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminProductsProductIdRoute = AdminProductsProductIdRouteImport.update({
+  id: '/products/$productId',
+  path: '/products/$productId',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOrdersNewRoute = AdminOrdersNewRouteImport.update({
+  id: '/orders/new',
+  path: '/orders/new',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOrdersOrderIdRoute = AdminOrdersOrderIdRouteImport.update({
+  id: '/orders/$orderId',
+  path: '/orders/$orderId',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminProductsVariantsVariantIdRoute =
+  AdminProductsVariantsVariantIdRouteImport.update({
+    id: '/products/variants/$variantId',
+    path: '/products/variants/$variantId',
+    getParentRoute: () => AdminRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/admin/settings': typeof AdminSettingsRoute
+  '/api/upload': typeof ApiUploadRoute
   '/auth/login': typeof AuthLoginRoute
+  '/auth/register': typeof AuthRegisterRoute
+  '/admin/': typeof AdminIndexRoute
+  '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
+  '/admin/orders/new': typeof AdminOrdersNewRoute
+  '/admin/products/$productId': typeof AdminProductsProductIdRoute
+  '/admin/products/categories': typeof AdminProductsCategoriesRoute
+  '/admin/products/definitions': typeof AdminProductsDefinitionsRoute
+  '/admin/products/new': typeof AdminProductsNewRoute
+  '/admin/products/vendors': typeof AdminProductsVendorsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin/customers': typeof AdminCustomersIndexRoute
+  '/admin/orders': typeof AdminOrdersIndexRoute
+  '/admin/products': typeof AdminProductsIndexRoute
+  '/admin/products/variants/$variantId': typeof AdminProductsVariantsVariantIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin/settings': typeof AdminSettingsRoute
+  '/api/upload': typeof ApiUploadRoute
   '/auth/login': typeof AuthLoginRoute
+  '/auth/register': typeof AuthRegisterRoute
+  '/admin': typeof AdminIndexRoute
+  '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
+  '/admin/orders/new': typeof AdminOrdersNewRoute
+  '/admin/products/$productId': typeof AdminProductsProductIdRoute
+  '/admin/products/categories': typeof AdminProductsCategoriesRoute
+  '/admin/products/definitions': typeof AdminProductsDefinitionsRoute
+  '/admin/products/new': typeof AdminProductsNewRoute
+  '/admin/products/vendors': typeof AdminProductsVendorsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin/customers': typeof AdminCustomersIndexRoute
+  '/admin/orders': typeof AdminOrdersIndexRoute
+  '/admin/products': typeof AdminProductsIndexRoute
+  '/admin/products/variants/$variantId': typeof AdminProductsVariantsVariantIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/admin/settings': typeof AdminSettingsRoute
+  '/api/upload': typeof ApiUploadRoute
   '/auth/login': typeof AuthLoginRoute
+  '/auth/register': typeof AuthRegisterRoute
+  '/admin/': typeof AdminIndexRoute
+  '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
+  '/admin/orders/new': typeof AdminOrdersNewRoute
+  '/admin/products/$productId': typeof AdminProductsProductIdRoute
+  '/admin/products/categories': typeof AdminProductsCategoriesRoute
+  '/admin/products/definitions': typeof AdminProductsDefinitionsRoute
+  '/admin/products/new': typeof AdminProductsNewRoute
+  '/admin/products/vendors': typeof AdminProductsVendorsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin/customers/': typeof AdminCustomersIndexRoute
+  '/admin/orders/': typeof AdminOrdersIndexRoute
+  '/admin/products/': typeof AdminProductsIndexRoute
+  '/admin/products/variants/$variantId': typeof AdminProductsVariantsVariantIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth/login' | '/api/auth/$'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/admin/settings'
+    | '/api/upload'
+    | '/auth/login'
+    | '/auth/register'
+    | '/admin/'
+    | '/admin/orders/$orderId'
+    | '/admin/orders/new'
+    | '/admin/products/$productId'
+    | '/admin/products/categories'
+    | '/admin/products/definitions'
+    | '/admin/products/new'
+    | '/admin/products/vendors'
+    | '/api/auth/$'
+    | '/admin/customers'
+    | '/admin/orders'
+    | '/admin/products'
+    | '/admin/products/variants/$variantId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth/login' | '/api/auth/$'
-  id: '__root__' | '/' | '/auth/login' | '/api/auth/$'
+  to:
+    | '/'
+    | '/admin/settings'
+    | '/api/upload'
+    | '/auth/login'
+    | '/auth/register'
+    | '/admin'
+    | '/admin/orders/$orderId'
+    | '/admin/orders/new'
+    | '/admin/products/$productId'
+    | '/admin/products/categories'
+    | '/admin/products/definitions'
+    | '/admin/products/new'
+    | '/admin/products/vendors'
+    | '/api/auth/$'
+    | '/admin/customers'
+    | '/admin/orders'
+    | '/admin/products'
+    | '/admin/products/variants/$variantId'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/admin/settings'
+    | '/api/upload'
+    | '/auth/login'
+    | '/auth/register'
+    | '/admin/'
+    | '/admin/orders/$orderId'
+    | '/admin/orders/new'
+    | '/admin/products/$productId'
+    | '/admin/products/categories'
+    | '/admin/products/definitions'
+    | '/admin/products/new'
+    | '/admin/products/vendors'
+    | '/api/auth/$'
+    | '/admin/customers/'
+    | '/admin/orders/'
+    | '/admin/products/'
+    | '/admin/products/variants/$variantId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRouteWithChildren
+  ApiUploadRoute: typeof ApiUploadRoute
   AuthLoginRoute: typeof AuthLoginRoute
+  AuthRegisterRoute: typeof AuthRegisterRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/auth/register': {
+      id: '/auth/register'
+      path: '/auth/register'
+      fullPath: '/auth/register'
+      preLoaderRoute: typeof AuthRegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/login': {
@@ -75,6 +301,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/upload': {
+      id: '/api/upload'
+      path: '/api/upload'
+      fullPath: '/api/upload'
+      preLoaderRoute: typeof ApiUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/settings': {
+      id: '/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminSettingsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/products/': {
+      id: '/admin/products/'
+      path: '/products'
+      fullPath: '/admin/products'
+      preLoaderRoute: typeof AdminProductsIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/orders/': {
+      id: '/admin/orders/'
+      path: '/orders'
+      fullPath: '/admin/orders'
+      preLoaderRoute: typeof AdminOrdersIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/customers/': {
+      id: '/admin/customers/'
+      path: '/customers'
+      fullPath: '/admin/customers'
+      preLoaderRoute: typeof AdminCustomersIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -82,12 +343,105 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/products/vendors': {
+      id: '/admin/products/vendors'
+      path: '/products/vendors'
+      fullPath: '/admin/products/vendors'
+      preLoaderRoute: typeof AdminProductsVendorsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/products/new': {
+      id: '/admin/products/new'
+      path: '/products/new'
+      fullPath: '/admin/products/new'
+      preLoaderRoute: typeof AdminProductsNewRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/products/definitions': {
+      id: '/admin/products/definitions'
+      path: '/products/definitions'
+      fullPath: '/admin/products/definitions'
+      preLoaderRoute: typeof AdminProductsDefinitionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/products/categories': {
+      id: '/admin/products/categories'
+      path: '/products/categories'
+      fullPath: '/admin/products/categories'
+      preLoaderRoute: typeof AdminProductsCategoriesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/products/$productId': {
+      id: '/admin/products/$productId'
+      path: '/products/$productId'
+      fullPath: '/admin/products/$productId'
+      preLoaderRoute: typeof AdminProductsProductIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/orders/new': {
+      id: '/admin/orders/new'
+      path: '/orders/new'
+      fullPath: '/admin/orders/new'
+      preLoaderRoute: typeof AdminOrdersNewRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/orders/$orderId': {
+      id: '/admin/orders/$orderId'
+      path: '/orders/$orderId'
+      fullPath: '/admin/orders/$orderId'
+      preLoaderRoute: typeof AdminOrdersOrderIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/products/variants/$variantId': {
+      id: '/admin/products/variants/$variantId'
+      path: '/products/variants/$variantId'
+      fullPath: '/admin/products/variants/$variantId'
+      preLoaderRoute: typeof AdminProductsVariantsVariantIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
+interface AdminRouteChildren {
+  AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+  AdminOrdersOrderIdRoute: typeof AdminOrdersOrderIdRoute
+  AdminOrdersNewRoute: typeof AdminOrdersNewRoute
+  AdminProductsProductIdRoute: typeof AdminProductsProductIdRoute
+  AdminProductsCategoriesRoute: typeof AdminProductsCategoriesRoute
+  AdminProductsDefinitionsRoute: typeof AdminProductsDefinitionsRoute
+  AdminProductsNewRoute: typeof AdminProductsNewRoute
+  AdminProductsVendorsRoute: typeof AdminProductsVendorsRoute
+  AdminCustomersIndexRoute: typeof AdminCustomersIndexRoute
+  AdminOrdersIndexRoute: typeof AdminOrdersIndexRoute
+  AdminProductsIndexRoute: typeof AdminProductsIndexRoute
+  AdminProductsVariantsVariantIdRoute: typeof AdminProductsVariantsVariantIdRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminSettingsRoute: AdminSettingsRoute,
+  AdminIndexRoute: AdminIndexRoute,
+  AdminOrdersOrderIdRoute: AdminOrdersOrderIdRoute,
+  AdminOrdersNewRoute: AdminOrdersNewRoute,
+  AdminProductsProductIdRoute: AdminProductsProductIdRoute,
+  AdminProductsCategoriesRoute: AdminProductsCategoriesRoute,
+  AdminProductsDefinitionsRoute: AdminProductsDefinitionsRoute,
+  AdminProductsNewRoute: AdminProductsNewRoute,
+  AdminProductsVendorsRoute: AdminProductsVendorsRoute,
+  AdminCustomersIndexRoute: AdminCustomersIndexRoute,
+  AdminOrdersIndexRoute: AdminOrdersIndexRoute,
+  AdminProductsIndexRoute: AdminProductsIndexRoute,
+  AdminProductsVariantsVariantIdRoute: AdminProductsVariantsVariantIdRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRouteWithChildren,
+  ApiUploadRoute: ApiUploadRoute,
   AuthLoginRoute: AuthLoginRoute,
+  AuthRegisterRoute: AuthRegisterRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport
