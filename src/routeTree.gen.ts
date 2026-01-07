@@ -29,6 +29,7 @@ import { Route as AdminProductsIndexRouteImport } from './routes/admin/products/
 import { Route as AdminPagesIndexRouteImport } from './routes/admin/pages/index'
 import { Route as AdminOrdersIndexRouteImport } from './routes/admin/orders/index'
 import { Route as AdminCustomersIndexRouteImport } from './routes/admin/customers/index'
+import { Route as AdminCollectionsIndexRouteImport } from './routes/admin/collections/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AdminProductsVendorsRouteImport } from './routes/admin/products/vendors'
 import { Route as AdminProductsNewRouteImport } from './routes/admin/products/new'
@@ -39,6 +40,8 @@ import { Route as AdminPagesNewRouteImport } from './routes/admin/pages/new'
 import { Route as AdminPagesPageIdRouteImport } from './routes/admin/pages/$pageId'
 import { Route as AdminOrdersNewRouteImport } from './routes/admin/orders/new'
 import { Route as AdminOrdersOrderIdRouteImport } from './routes/admin/orders/$orderId'
+import { Route as AdminCollectionsNewRouteImport } from './routes/admin/collections/new'
+import { Route as AdminCollectionsCollectionIdRouteImport } from './routes/admin/collections/$collectionId'
 import { Route as AccountOrdersOrderIdRouteImport } from './routes/account/orders/$orderId'
 import { Route as AdminProductsVariantsVariantIdRouteImport } from './routes/admin/products/variants/$variantId'
 
@@ -142,6 +145,11 @@ const AdminCustomersIndexRoute = AdminCustomersIndexRouteImport.update({
   path: '/customers/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCollectionsIndexRoute = AdminCollectionsIndexRouteImport.update({
+  id: '/collections/',
+  path: '/collections/',
+  getParentRoute: () => AdminRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -193,6 +201,17 @@ const AdminOrdersOrderIdRoute = AdminOrdersOrderIdRouteImport.update({
   path: '/orders/$orderId',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCollectionsNewRoute = AdminCollectionsNewRouteImport.update({
+  id: '/collections/new',
+  path: '/collections/new',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminCollectionsCollectionIdRoute =
+  AdminCollectionsCollectionIdRouteImport.update({
+    id: '/collections/$collectionId',
+    path: '/collections/$collectionId',
+    getParentRoute: () => AdminRoute,
+  } as any)
 const AccountOrdersOrderIdRoute = AccountOrdersOrderIdRouteImport.update({
   id: '/$orderId',
   path: '/$orderId',
@@ -223,6 +242,8 @@ export interface FileRoutesByFullPath {
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/account/orders/$orderId': typeof AccountOrdersOrderIdRoute
+  '/admin/collections/$collectionId': typeof AdminCollectionsCollectionIdRoute
+  '/admin/collections/new': typeof AdminCollectionsNewRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
   '/admin/orders/new': typeof AdminOrdersNewRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
@@ -233,6 +254,7 @@ export interface FileRoutesByFullPath {
   '/admin/products/new': typeof AdminProductsNewRoute
   '/admin/products/vendors': typeof AdminProductsVendorsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin/collections': typeof AdminCollectionsIndexRoute
   '/admin/customers': typeof AdminCustomersIndexRoute
   '/admin/orders': typeof AdminOrdersIndexRoute
   '/admin/pages': typeof AdminPagesIndexRoute
@@ -255,6 +277,8 @@ export interface FileRoutesByTo {
   '/account': typeof AccountIndexRoute
   '/admin': typeof AdminIndexRoute
   '/account/orders/$orderId': typeof AccountOrdersOrderIdRoute
+  '/admin/collections/$collectionId': typeof AdminCollectionsCollectionIdRoute
+  '/admin/collections/new': typeof AdminCollectionsNewRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
   '/admin/orders/new': typeof AdminOrdersNewRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
@@ -265,6 +289,7 @@ export interface FileRoutesByTo {
   '/admin/products/new': typeof AdminProductsNewRoute
   '/admin/products/vendors': typeof AdminProductsVendorsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin/collections': typeof AdminCollectionsIndexRoute
   '/admin/customers': typeof AdminCustomersIndexRoute
   '/admin/orders': typeof AdminOrdersIndexRoute
   '/admin/pages': typeof AdminPagesIndexRoute
@@ -290,6 +315,8 @@ export interface FileRoutesById {
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/account/orders/$orderId': typeof AccountOrdersOrderIdRoute
+  '/admin/collections/$collectionId': typeof AdminCollectionsCollectionIdRoute
+  '/admin/collections/new': typeof AdminCollectionsNewRoute
   '/admin/orders/$orderId': typeof AdminOrdersOrderIdRoute
   '/admin/orders/new': typeof AdminOrdersNewRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
@@ -300,6 +327,7 @@ export interface FileRoutesById {
   '/admin/products/new': typeof AdminProductsNewRoute
   '/admin/products/vendors': typeof AdminProductsVendorsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/admin/collections/': typeof AdminCollectionsIndexRoute
   '/admin/customers/': typeof AdminCustomersIndexRoute
   '/admin/orders/': typeof AdminOrdersIndexRoute
   '/admin/pages/': typeof AdminPagesIndexRoute
@@ -326,6 +354,8 @@ export interface FileRouteTypes {
     | '/account/'
     | '/admin/'
     | '/account/orders/$orderId'
+    | '/admin/collections/$collectionId'
+    | '/admin/collections/new'
     | '/admin/orders/$orderId'
     | '/admin/orders/new'
     | '/admin/pages/$pageId'
@@ -336,6 +366,7 @@ export interface FileRouteTypes {
     | '/admin/products/new'
     | '/admin/products/vendors'
     | '/api/auth/$'
+    | '/admin/collections'
     | '/admin/customers'
     | '/admin/orders'
     | '/admin/pages'
@@ -358,6 +389,8 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin'
     | '/account/orders/$orderId'
+    | '/admin/collections/$collectionId'
+    | '/admin/collections/new'
     | '/admin/orders/$orderId'
     | '/admin/orders/new'
     | '/admin/pages/$pageId'
@@ -368,6 +401,7 @@ export interface FileRouteTypes {
     | '/admin/products/new'
     | '/admin/products/vendors'
     | '/api/auth/$'
+    | '/admin/collections'
     | '/admin/customers'
     | '/admin/orders'
     | '/admin/pages'
@@ -392,6 +426,8 @@ export interface FileRouteTypes {
     | '/account/'
     | '/admin/'
     | '/account/orders/$orderId'
+    | '/admin/collections/$collectionId'
+    | '/admin/collections/new'
     | '/admin/orders/$orderId'
     | '/admin/orders/new'
     | '/admin/pages/$pageId'
@@ -402,6 +438,7 @@ export interface FileRouteTypes {
     | '/admin/products/new'
     | '/admin/products/vendors'
     | '/api/auth/$'
+    | '/admin/collections/'
     | '/admin/customers/'
     | '/admin/orders/'
     | '/admin/pages/'
@@ -566,6 +603,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCustomersIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/collections/': {
+      id: '/admin/collections/'
+      path: '/collections'
+      fullPath: '/admin/collections'
+      preLoaderRoute: typeof AdminCollectionsIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -636,6 +680,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminOrdersOrderIdRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/collections/new': {
+      id: '/admin/collections/new'
+      path: '/collections/new'
+      fullPath: '/admin/collections/new'
+      preLoaderRoute: typeof AdminCollectionsNewRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/collections/$collectionId': {
+      id: '/admin/collections/$collectionId'
+      path: '/collections/$collectionId'
+      fullPath: '/admin/collections/$collectionId'
+      preLoaderRoute: typeof AdminCollectionsCollectionIdRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/account/orders/$orderId': {
       id: '/account/orders/$orderId'
       path: '/$orderId'
@@ -681,6 +739,8 @@ const AccountRouteWithChildren =
 interface AdminRouteChildren {
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminCollectionsCollectionIdRoute: typeof AdminCollectionsCollectionIdRoute
+  AdminCollectionsNewRoute: typeof AdminCollectionsNewRoute
   AdminOrdersOrderIdRoute: typeof AdminOrdersOrderIdRoute
   AdminOrdersNewRoute: typeof AdminOrdersNewRoute
   AdminPagesPageIdRoute: typeof AdminPagesPageIdRoute
@@ -690,6 +750,7 @@ interface AdminRouteChildren {
   AdminProductsDefinitionsRoute: typeof AdminProductsDefinitionsRoute
   AdminProductsNewRoute: typeof AdminProductsNewRoute
   AdminProductsVendorsRoute: typeof AdminProductsVendorsRoute
+  AdminCollectionsIndexRoute: typeof AdminCollectionsIndexRoute
   AdminCustomersIndexRoute: typeof AdminCustomersIndexRoute
   AdminOrdersIndexRoute: typeof AdminOrdersIndexRoute
   AdminPagesIndexRoute: typeof AdminPagesIndexRoute
@@ -700,6 +761,8 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminSettingsRoute: AdminSettingsRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminCollectionsCollectionIdRoute: AdminCollectionsCollectionIdRoute,
+  AdminCollectionsNewRoute: AdminCollectionsNewRoute,
   AdminOrdersOrderIdRoute: AdminOrdersOrderIdRoute,
   AdminOrdersNewRoute: AdminOrdersNewRoute,
   AdminPagesPageIdRoute: AdminPagesPageIdRoute,
@@ -709,6 +772,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminProductsDefinitionsRoute: AdminProductsDefinitionsRoute,
   AdminProductsNewRoute: AdminProductsNewRoute,
   AdminProductsVendorsRoute: AdminProductsVendorsRoute,
+  AdminCollectionsIndexRoute: AdminCollectionsIndexRoute,
   AdminCustomersIndexRoute: AdminCustomersIndexRoute,
   AdminOrdersIndexRoute: AdminOrdersIndexRoute,
   AdminPagesIndexRoute: AdminPagesIndexRoute,

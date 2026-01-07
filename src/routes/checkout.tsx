@@ -4,15 +4,17 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getCartQueryOptions, clearCartMutationOptions, CART_QUERY_KEY } from "@/queries/cart";
 import { getActiveShippingMethodsQueryOptions } from "@/queries/shipping-methods";
 import { createOrderServerFn } from "@/queries/orders";
+import { getUserAddressesQueryOptions, createUserAddressServerFn, ADDRESSES_QUERY_KEY } from "@/queries/addresses";
 import { useCartSession } from "@/hooks/useCartSession";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
+import { Loader2, MapPin, Plus, Check } from "lucide-react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
 import { cn } from "@/lib/utils";
+import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/checkout")({
 	component: CheckoutPage,
@@ -39,17 +41,35 @@ function CheckoutPage() {
 	const { data: shippingMethods = [], isLoading: shippingLoading } = useQuery(
 		getActiveShippingMethodsQueryOptions()
 	);
+	
+	// Auth state
+	const { data: session } = authClient.useSession();
+	const isAuthenticated = !!session?.user;
+	
+	// Fetch user's saved addresses if authenticated
+	const { data: savedAddresses = [], isLoading: addressesLoading } = useQuery({
+		...getUserAddressesQueryOptions(),
+		enabled: isAuthenticated,
+	});
 
 	const [selectedShippingMethodId, setSelectedShippingMethodId] = useState<
 		string | null
 	>(null);
+	const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+	const [showNewAddressForm, setShowNewAddressForm] = useState(false);
+	const [saveAddress, setSaveAddress] = useState(true);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const clearCartMutation = useMutation(clearCartMutationOptions(sessionId || undefined));
+	
+	// Get default shipping address
+	const defaultShippingAddress = savedAddresses.find(
+		(addr) => addr.type === "shipping" && addr.isDefault
+	) || savedAddresses.find((addr) => addr.type === "shipping") || savedAddresses[0];
 
 	const form = useForm({
 		defaultValues: {
-			email: "",
+			email: session?.user?.email || "",
 			name: "",
 			lastName: "",
 			address: "",
@@ -140,6 +160,18 @@ function CheckoutPage() {
 					},
 				});
 
+				// Save address to address book if user is authenticated and wants to save
+				if (isAuthenticated && saveAddress && !selectedAddressId) {
+					await saveAddressToBook({
+						firstName: value.name,
+						lastName: value.lastName,
+						address1: value.address,
+						city: value.city,
+						zip: value.zip,
+						phone: value.phone,
+					});
+				}
+
 				// Clear cart after successful order creation
 				// Important: Clear cart before clearing session to ensure we have the sessionId
 				try {
@@ -175,6 +207,90 @@ function CheckoutPage() {
 			}
 		},
 	});
+
+	// Auto-fill form with default address when addresses are loaded
+	useEffect(() => {
+		if (isAuthenticated && defaultShippingAddress && !selectedAddressId && savedAddresses.length > 0) {
+			setSelectedAddressId(defaultShippingAddress.id);
+			fillFormWithAddress(defaultShippingAddress);
+		}
+	}, [isAuthenticated, savedAddresses.length, defaultShippingAddress?.id]);
+
+	// Fill form with user email when session loads
+	useEffect(() => {
+		if (session?.user?.email) {
+			form.setFieldValue("email", session.user.email);
+		}
+	}, [session?.user?.email]);
+
+	// Function to fill form with address data
+	const fillFormWithAddress = (address: typeof savedAddresses[0]) => {
+		form.setFieldValue("name", address.firstName || "");
+		form.setFieldValue("lastName", address.lastName || "");
+		form.setFieldValue("address", address.address1 || "");
+		form.setFieldValue("city", address.city || "");
+		form.setFieldValue("zip", address.zip || "");
+		form.setFieldValue("phone", address.phone || "");
+	};
+
+	// Handle address selection
+	const handleAddressSelect = (addressId: string) => {
+		const address = savedAddresses.find((a) => a.id === addressId);
+		if (address) {
+			setSelectedAddressId(addressId);
+			setShowNewAddressForm(false);
+			fillFormWithAddress(address);
+		}
+	};
+
+	// Handle new address form toggle
+	const handleNewAddressClick = () => {
+		setSelectedAddressId(null);
+		setShowNewAddressForm(true);
+		// Clear form for new address
+		form.setFieldValue("name", "");
+		form.setFieldValue("lastName", "");
+		form.setFieldValue("address", "");
+		form.setFieldValue("city", "");
+		form.setFieldValue("zip", "");
+		form.setFieldValue("phone", "");
+	};
+
+	// Save address to address book (called after successful order)
+	const saveAddressToBook = async (addressData: {
+		firstName: string;
+		lastName: string;
+		address1: string;
+		city: string;
+		zip: string;
+		phone: string;
+	}) => {
+		if (!isAuthenticated || !saveAddress || selectedAddressId) {
+			// Don't save if not authenticated, user doesn't want to save, or using existing address
+			return;
+		}
+
+		try {
+			await createUserAddressServerFn({
+				data: {
+					type: "shipping",
+					firstName: addressData.firstName,
+					lastName: addressData.lastName,
+					address1: addressData.address1,
+					city: addressData.city,
+					zip: addressData.zip,
+					country: "Bosnia and Herzegovina",
+					phone: addressData.phone,
+					isDefault: savedAddresses.length === 0, // Make default if first address
+				},
+			});
+			// Invalidate addresses query to refresh the list
+			queryClient.invalidateQueries({ queryKey: [ADDRESSES_QUERY_KEY] });
+		} catch (error) {
+			console.error("Error saving address:", error);
+			// Don't fail the order if address save fails
+		}
+	};
 
 	// Calculate totals
 	const items = cartData?.items || [];
@@ -246,7 +362,7 @@ function CheckoutPage() {
 		form.setFieldValue("shippingMethodId", availableShippingMethods[0].id);
 	}
 
-	if (cartLoading || shippingLoading) {
+	if (cartLoading || shippingLoading || (isAuthenticated && addressesLoading)) {
 		return (
 			<div className="min-h-screen bg-gray-50">
 				<ShopNavigation />
@@ -390,7 +506,118 @@ function CheckoutPage() {
 									<h2 className="text-xl font-semibold text-gray-900 mb-4">
 										Adresa za dostavu
 									</h2>
+									
+									{/* Address Picker for authenticated users */}
+									{isAuthenticated && savedAddresses.length > 0 && (
+										<div className="mb-6">
+											<Label className="text-sm font-medium text-gray-700 mb-3 block">
+												Odaberite sačuvanu adresu
+											</Label>
+											<div className="grid gap-3">
+												{savedAddresses
+													.filter((addr) => addr.type === "shipping" || !addr.type)
+													.map((address) => (
+														<button
+															key={address.id}
+															type="button"
+															onClick={() => handleAddressSelect(address.id)}
+															className={cn(
+																"w-full text-left p-4 border rounded-lg transition-all",
+																selectedAddressId === address.id
+																	? "border-primary bg-primary/5 ring-1 ring-primary"
+																	: "border-gray-200 hover:border-gray-300"
+															)}
+														>
+															<div className="flex items-start gap-3">
+																<div className={cn(
+																	"mt-0.5 size-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
+																	selectedAddressId === address.id
+																		? "border-primary bg-primary"
+																		: "border-gray-300"
+																)}>
+																	{selectedAddressId === address.id && (
+																		<Check className="size-3 text-white" />
+																	)}
+																</div>
+																<div className="flex-1 min-w-0">
+																	<div className="flex items-center gap-2">
+																		<MapPin className="size-4 text-gray-400" />
+																		<span className="font-medium text-gray-900">
+																			{[address.firstName, address.lastName].filter(Boolean).join(" ") || "Adresa"}
+																		</span>
+																		{address.isDefault && (
+																			<span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+																				Zadano
+																			</span>
+																		)}
+																	</div>
+																	<p className="text-sm text-gray-600 mt-1">
+																		{address.address1}
+																		{address.city && `, ${address.city}`}
+																		{address.zip && ` ${address.zip}`}
+																	</p>
+																	{address.phone && (
+																		<p className="text-sm text-gray-500 mt-0.5">
+																			{address.phone}
+																		</p>
+																	)}
+																</div>
+															</div>
+														</button>
+													))}
+												
+												{/* New Address Option */}
+												<button
+													type="button"
+													onClick={handleNewAddressClick}
+													className={cn(
+														"w-full text-left p-4 border rounded-lg transition-all",
+														showNewAddressForm && !selectedAddressId
+															? "border-primary bg-primary/5 ring-1 ring-primary"
+															: "border-gray-200 hover:border-gray-300 border-dashed"
+													)}
+												>
+													<div className="flex items-center gap-3">
+														<div className={cn(
+															"size-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
+															showNewAddressForm && !selectedAddressId
+																? "border-primary bg-primary"
+																: "border-gray-300"
+														)}>
+															{showNewAddressForm && !selectedAddressId ? (
+																<Check className="size-3 text-white" />
+															) : (
+																<Plus className="size-3 text-gray-400" />
+															)}
+														</div>
+														<span className="font-medium text-gray-700">
+															Koristi novu adresu
+														</span>
+													</div>
+												</button>
+											</div>
+										</div>
+									)}
+									
+									{/* Show form if no saved addresses or user wants new address */}
+									{(!isAuthenticated || savedAddresses.length === 0 || showNewAddressForm || !selectedAddressId) && (
 									<div className="space-y-4">
+										{/* Save address checkbox for authenticated users entering new address */}
+										{isAuthenticated && !selectedAddressId && (
+											<div className="flex items-center gap-2 mb-4 p-3 bg-gray-50 rounded-lg">
+												<input
+													type="checkbox"
+													id="saveAddress"
+													checked={saveAddress}
+													onChange={(e) => setSaveAddress(e.target.checked)}
+													className="size-4 text-primary focus:ring-primary rounded"
+												/>
+												<Label htmlFor="saveAddress" className="text-sm text-gray-700 cursor-pointer">
+													Sačuvaj adresu za buduće narudžbe
+												</Label>
+											</div>
+										)}
+										
 										{/* Name and Last Name */}
 										<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 											<form.Field
@@ -595,6 +822,7 @@ function CheckoutPage() {
 											</form.Field>
 										</div>
 									</div>
+									)}
 								</div>
 
 								{/* Shipping Method */}

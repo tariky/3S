@@ -147,3 +147,16 @@ export const getAllVendorsQueryOptions = (data: {
   });
 };
 
+// Simple query options to get all vendors without pagination
+export const getVendorsQueryOptions = () => {
+  return queryOptions({
+    queryKey: [VENDORS_QUERY_KEY, "all"],
+    queryFn: async () => {
+      const response = await getVendorsServerFn({
+        data: { search: "", page: 1, limit: 1000 },
+      });
+      return response.data;
+    },
+  });
+};
+

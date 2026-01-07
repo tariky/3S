@@ -204,3 +204,16 @@ export const getAllCategoriesQueryOptions = (data: {
     },
   });
 };
+
+// Simple query options to get all categories without pagination
+export const getCategoriesQueryOptions = () => {
+  return queryOptions({
+    queryKey: [CATEGORIES_QUERY_KEY, "all"],
+    queryFn: async () => {
+      const response = await getCategoriesServerFn({
+        data: { search: "", page: 1, limit: 1000 },
+      });
+      return response.data;
+    },
+  });
+};

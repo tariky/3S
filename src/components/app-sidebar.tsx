@@ -3,6 +3,7 @@ import {
 	ChartColumn,
 	Cog,
 	FileText,
+	FolderKanban,
 	Frame,
 	Inbox,
 	LucideBookImage,
@@ -57,6 +58,11 @@ const data = {
 					url: "/admin/products/inventory",
 				},
 			],
+		},
+		{
+			title: "Kolekcije",
+			url: "/admin/collections",
+			icon: FolderKanban,
 		},
 		{
 			title: "Narudžbe",

@@ -1172,6 +1172,115 @@ export const cartItemsRelations = relations(cartItems, ({ one }) => ({
   }),
 }));
 
+// Collections (like Shopify smart collections)
+export const collections = mysqlTable(
+  "collections",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    name: varchar("name", { length: 255 }).notNull(),
+    slug: varchar("slug", { length: 255 }).notNull().unique(),
+    description: text("description"),
+    image: text("image"),
+    // Rule matching: 'all' = AND (all rules must match), 'any' = OR (any rule must match)
+    ruleMatch: varchar("rule_match", { length: 10 }).default("all").notNull(),
+    // Sort order for products: manual, best-selling, alphabetical-asc, alphabetical-desc, price-asc, price-desc, created-asc, created-desc
+    sortOrder: varchar("sort_order", { length: 50 }).default("manual").notNull(),
+    active: boolean("active").default(true).notNull(),
+    seoTitle: varchar("seo_title", { length: 255 }),
+    seoDescription: text("seo_description"),
+    createdAt: timestamp("created_at", { fsp: 3 }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { fsp: 3 })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("collections_slug_idx").on(table.slug),
+    index("collections_active_idx").on(table.active),
+  ]
+);
+
+// Collection Rules (conditions for smart collections)
+export const collectionRules = mysqlTable(
+  "collection_rules",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    collectionId: varchar("collection_id", { length: 36 })
+      .notNull()
+      .references(() => collections.id, { onDelete: "cascade" }),
+    // Rule type: price, compare_at_price, inventory, category, vendor, tag
+    ruleType: varchar("rule_type", { length: 50 }).notNull(),
+    // Operator: equals, not_equals, greater_than, less_than, greater_than_or_equals, less_than_or_equals, contains, not_contains
+    operator: varchar("operator", { length: 50 }).notNull(),
+    // Value to compare against (stored as string, converted based on rule type)
+    value: text("value").notNull(),
+    position: int("position").default(0).notNull(),
+    createdAt: timestamp("created_at", { fsp: 3 }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { fsp: 3 })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("collection_rules_collectionId_idx").on(table.collectionId),
+    index("collection_rules_ruleType_idx").on(table.ruleType),
+  ]
+);
+
+// Collection Products (for manual product ordering within collections)
+export const collectionProducts = mysqlTable(
+  "collection_products",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    collectionId: varchar("collection_id", { length: 36 })
+      .notNull()
+      .references(() => collections.id, { onDelete: "cascade" }),
+    productId: varchar("product_id", { length: 36 })
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    position: int("position").default(0).notNull(),
+    // Whether this product was manually added (vs auto-matched by rules)
+    isManual: boolean("is_manual").default(false).notNull(),
+    createdAt: timestamp("created_at", { fsp: 3 }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { fsp: 3 })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("collection_products_collectionId_idx").on(table.collectionId),
+    index("collection_products_productId_idx").on(table.productId),
+    index("collection_products_position_idx").on(table.position),
+  ]
+);
+
+// Collection Relations
+export const collectionsRelations = relations(collections, ({ many }) => ({
+  rules: many(collectionRules),
+  products: many(collectionProducts),
+}));
+
+export const collectionRulesRelations = relations(collectionRules, ({ one }) => ({
+  collection: one(collections, {
+    fields: [collectionRules.collectionId],
+    references: [collections.id],
+  }),
+}));
+
+export const collectionProductsRelations = relations(collectionProducts, ({ one }) => ({
+  collection: one(collections, {
+    fields: [collectionProducts.collectionId],
+    references: [collections.id],
+  }),
+  product: one(products, {
+    fields: [collectionProducts.productId],
+    references: [products.id],
+  }),
+}));
+
 export type ProductCategory = typeof productCategories.$inferSelect;
 export type ShippingMethod = typeof shippingMethods.$inferSelect;
 export type PaymentMethod = typeof paymentMethods.$inferSelect;
+export type Collection = typeof collections.$inferSelect;
+export type CollectionRule = typeof collectionRules.$inferSelect;
+export type CollectionProduct = typeof collectionProducts.$inferSelect;
