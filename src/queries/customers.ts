@@ -73,6 +73,7 @@ export const createCustomerServerFn = createServerFn({ method: "POST" })
     
     // Validate and generate email
     let customerEmail = data.email?.trim() || "";
+    let hasEmail = false;
     
     // If email is provided, validate it
     if (customerEmail) {
@@ -80,9 +81,11 @@ export const createCustomerServerFn = createServerFn({ method: "POST" })
       if (!emailRegex.test(customerEmail)) {
         throw new Error("Nevažeći email format");
       }
+      hasEmail = true;
     } else {
       // Generate a unique placeholder email if none is provided
       customerEmail = `customer-${customerId}@placeholder.local`;
+      hasEmail = false;
     }
     
     await db.insert(customers).values({
@@ -92,6 +95,7 @@ export const createCustomerServerFn = createServerFn({ method: "POST" })
       lastName: data.lastName || null,
       phone: data.phone || null,
       acceptsMarketing: data.acceptsMarketing ?? false,
+      hasEmail: hasEmail,
     });
 
     // Create address if address fields are provided

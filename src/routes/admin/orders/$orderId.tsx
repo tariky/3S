@@ -739,12 +739,16 @@ function RouteComponent() {
                       : "-"}
                   </p>
                 </div>
-                {order.customer.email && (
-                  <div>
-                    <span className="text-xs text-gray-500">Email</span>
-                    <p className="text-sm">{order.customer.email}</p>
-                  </div>
-                )}
+                {order.customer.email &&
+                  (order.customer.hasEmail ||
+                    (!order.customer.email.endsWith("@placeholder.local") &&
+                      !order.customer.email.includes("customer-") &&
+                      !order.customer.email.includes("@placeholder"))) && (
+                    <div>
+                      <span className="text-xs text-gray-500">Email</span>
+                      <p className="text-sm">{order.customer.email}</p>
+                    </div>
+                  )}
                 {order.customer.phone && (
                   <div>
                     <span className="text-xs text-gray-500">Telefon</span>
@@ -753,7 +757,10 @@ function RouteComponent() {
                 )}
               </div>
             </>
-          ) : order.email ? (
+          ) : order.email &&
+            !order.email.endsWith("@placeholder.local") &&
+            !order.email.includes("customer-") &&
+            !order.email.includes("@placeholder") ? (
             <div className="flex flex-col gap-2">
               <div>
                 <span className="text-xs text-gray-500">Email</span>

@@ -1,0 +1,1 @@
+ALTER TABLE `customers` ADD `has_email` boolean DEFAULT false NOT NULL;

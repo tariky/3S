@@ -15,8 +15,82 @@ import {
 import { eq, and, like, count, desc, or, asc } from "drizzle-orm";
 import { z } from "zod";
 import { nanoid } from "nanoid";
+import { authMiddleware } from "@/utils/auth-middleware";
 
 export const ORDERS_QUERY_KEY = "orders";
+
+// Helper function to find or create customer by email
+async function getOrCreateCustomerByEmail(
+  email: string | null | undefined,
+  shippingAddress?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    phone?: string | null;
+  }
+): Promise<string | null> {
+  if (!email) {
+    return null;
+  }
+
+  // Normalize email (lowercase, trim)
+  const normalizedEmail = email.toLowerCase().trim();
+
+  // Check if customer already exists
+  const [existingCustomer] = await db
+    .select()
+    .from(customers)
+    .where(eq(customers.email, normalizedEmail))
+    .limit(1);
+
+  if (existingCustomer) {
+    // Update customer info if we have new data
+    const updates: {
+      firstName?: string | null;
+      lastName?: string | null;
+      phone?: string | null;
+      updatedAt: Date;
+    } = {
+      updatedAt: new Date(),
+    };
+
+    if (shippingAddress?.firstName && !existingCustomer.firstName) {
+      updates.firstName = shippingAddress.firstName;
+    }
+    if (shippingAddress?.lastName && !existingCustomer.lastName) {
+      updates.lastName = shippingAddress.lastName;
+    }
+    if (shippingAddress?.phone && !existingCustomer.phone) {
+      updates.phone = shippingAddress.phone;
+    }
+
+    // Only update if we have new data
+    if (Object.keys(updates).length > 1) {
+      await db
+        .update(customers)
+        .set(updates)
+        .where(eq(customers.id, existingCustomer.id));
+    }
+
+    return existingCustomer.id;
+  }
+
+  // Create new customer
+  const customerId = nanoid();
+  await db.insert(customers).values({
+    id: customerId,
+    email: normalizedEmail,
+    firstName: shippingAddress?.firstName || null,
+    lastName: shippingAddress?.lastName || null,
+    phone: shippingAddress?.phone || null,
+    hasEmail: true,
+    acceptsMarketing: false,
+    totalSpent: "0",
+    ordersCount: 0,
+    status: "active",
+  });
+
+  return customerId;
+}
 
 export const createOrderServerFn = createServerFn({ method: "POST" })
   .inputValidator(
@@ -80,11 +154,20 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
     // Generate order number (simple incrementing number for now)
     const orderNumber = `ORD-${Date.now()}`;
 
+    // Find or create customer by email if email is provided
+    let finalCustomerId = data.customerId || null;
+    if (!finalCustomerId && data.email) {
+      finalCustomerId = await getOrCreateCustomerByEmail(
+        data.email,
+        data.shippingAddress
+      );
+    }
+
     // Create order
     await db.insert(orders).values({
       id: orderId,
       orderNumber,
-      customerId: data.customerId || null,
+      customerId: finalCustomerId,
       email: data.email || null,
       status: "pending",
       financialStatus: "pending",
@@ -96,6 +179,33 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
       total: data.total.toString(),
       note: data.note || null,
     });
+
+    // Update customer stats (ordersCount and totalSpent) when order is created
+    if (finalCustomerId) {
+      const orderTotal = data.total;
+      
+      // Get current customer data
+      const [currentCustomer] = await db
+        .select()
+        .from(customers)
+        .where(eq(customers.id, finalCustomerId))
+        .limit(1);
+
+      if (currentCustomer) {
+        const currentOrdersCount = currentCustomer.ordersCount || 0;
+        const currentTotalSpent = parseFloat(currentCustomer.totalSpent || "0");
+        
+        // Increment orders count and add to total spent
+        await db
+          .update(customers)
+          .set({
+            ordersCount: currentOrdersCount + 1,
+            totalSpent: (currentTotalSpent + orderTotal).toFixed(2),
+            updatedAt: new Date(),
+          })
+          .where(eq(customers.id, finalCustomerId));
+      }
+    }
 
     // Create order items and reserve inventory
     if (data.items.length > 0) {
@@ -786,6 +896,33 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
       })
       .where(eq(orders.id, data.orderId));
 
+    // Decrease customer stats when order is cancelled (reverse the stats we added when order was created)
+    if (orderData.customerId) {
+      const orderTotal = parseFloat(orderData.total);
+      
+      // Get current customer data
+      const [currentCustomer] = await db
+        .select()
+        .from(customers)
+        .where(eq(customers.id, orderData.customerId))
+        .limit(1);
+
+      if (currentCustomer) {
+        const currentOrdersCount = Math.max(0, (currentCustomer.ordersCount || 0) - 1);
+        const currentTotalSpent = Math.max(0, parseFloat(currentCustomer.totalSpent || "0") - orderTotal);
+        
+        // Decrease orders count and subtract from total spent
+        await db
+          .update(customers)
+          .set({
+            ordersCount: currentOrdersCount,
+            totalSpent: currentTotalSpent.toFixed(2),
+            updatedAt: new Date(),
+          })
+          .where(eq(customers.id, orderData.customerId));
+      }
+    }
+
     // Fetch and return updated order
     return await getOrderByIdServerFn({ data: { orderId: data.orderId } });
   });
@@ -915,34 +1052,137 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
       })
       .where(eq(orders.id, data.orderId));
 
-    // Update customer orders count and total spent if customer exists
-    if (orderData.customerId) {
-      const orderTotal = parseFloat(orderData.total);
-      
-      // Get current customer data
-      const [currentCustomer] = await db
-        .select()
-        .from(customers)
-        .where(eq(customers.id, orderData.customerId))
-        .limit(1);
-
-      if (currentCustomer) {
-        const currentOrdersCount = currentCustomer.ordersCount || 0;
-        const currentTotalSpent = parseFloat(currentCustomer.totalSpent || "0");
-        
-        // Increment orders count and add to total spent
-        await db
-          .update(customers)
-          .set({
-            ordersCount: currentOrdersCount + 1,
-            totalSpent: (currentTotalSpent + orderTotal).toFixed(2),
-            updatedAt: new Date(),
-          })
-          .where(eq(customers.id, orderData.customerId));
-      }
-    }
+    // Note: Customer stats (ordersCount and totalSpent) are updated when order is created,
+    // not when fulfilled, to avoid double-counting
 
     // Fetch and return updated order
     return await getOrderByIdServerFn({ data: { orderId: data.orderId } });
   });
+
+// Get orders for current user (by email)
+export const getUserOrdersServerFn = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .inputValidator(
+    z.object({
+      page: z.number().optional(),
+      limit: z.number().optional(),
+    })
+  )
+  .handler(async ({ data, context }) => {
+    const userEmail = context.user.email;
+    const { page = 1, limit = 10 } = data;
+
+    // Find customer by email
+    const [customer] = await db
+      .select()
+      .from(customers)
+      .where(eq(customers.email, userEmail))
+      .limit(1);
+
+    if (!customer) {
+      return {
+        data: [],
+        total: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+        nextCursor: null,
+        previousCursor: null,
+      };
+    }
+
+    // Fetch orders for this customer
+    const ordersQuery = db
+      .select({
+        order: orders,
+      })
+      .from(orders)
+      .where(eq(orders.customerId, customer.id))
+      .orderBy(desc(orders.createdAt))
+      .limit(limit)
+      .offset((page - 1) * limit);
+
+    const response = await ordersQuery;
+    const transformedResponse = response.map((row) => row.order);
+
+    // Get total count
+    const totalQuery = db
+      .select({ count: count() })
+      .from(orders)
+      .where(eq(orders.customerId, customer.id));
+
+    const total = await totalQuery;
+    const totalCount = total[0].count;
+    const hasNextPage = page * limit < totalCount;
+    const hasPreviousPage = page > 1;
+
+    return {
+      data: transformedResponse,
+      total: totalCount,
+      hasNextPage,
+      hasPreviousPage,
+      nextCursor: hasNextPage ? page + 1 : null,
+      previousCursor: hasPreviousPage ? page - 1 : null,
+    };
+  });
+
+export const getUserOrdersQueryOptions = (opts: {
+  page?: number;
+  limit?: number;
+}) => {
+  return queryOptions({
+    queryKey: [ORDERS_QUERY_KEY, "user", opts],
+    queryFn: async () => {
+      return await getUserOrdersServerFn({ data: opts });
+    },
+  });
+};
+
+// Get user order by ID (with access check)
+export const getUserOrderByIdServerFn = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .inputValidator(z.object({ orderId: z.string() }))
+  .handler(async ({ data, context }) => {
+    const userEmail = context.user.email;
+
+    // Find customer by email
+    const [customer] = await db
+      .select()
+      .from(customers)
+      .where(eq(customers.email, userEmail))
+      .limit(1);
+
+    if (!customer) {
+      throw new Error("Customer not found");
+    }
+
+    // Fetch order and verify it belongs to the customer
+    const [orderRow] = await db
+      .select({
+        order: orders,
+      })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.id, data.orderId),
+          eq(orders.customerId, customer.id)
+        )
+      )
+      .limit(1);
+
+    if (!orderRow?.order) {
+      throw new Error("Order not found");
+    }
+
+    // Use existing getOrderByIdServerFn logic but with verified order
+    return await getOrderByIdServerFn({ data: { orderId: data.orderId } });
+  });
+
+export const getUserOrderByIdQueryOptions = (orderId: string) => {
+  return queryOptions({
+    queryKey: [ORDERS_QUERY_KEY, "user", "detail", orderId],
+    queryFn: async () => {
+      return await getUserOrderByIdServerFn({ data: { orderId } });
+    },
+  });
+};
 

@@ -12,6 +12,15 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { X, Loader2 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -61,6 +70,9 @@ function RouteComponent() {
     "percentage" | "fixed"
   >("percentage");
   const [note, setNote] = useState<string>("");
+  const [showCustomerError, setShowCustomerError] = useState(false);
+  const [showValidationError, setShowValidationError] = useState(false);
+  const [validationErrorMessage, setValidationErrorMessage] = useState("");
 
   const { data: shippingMethods } = useQuery(
     getActiveShippingMethodsQueryOptions()
@@ -300,26 +312,57 @@ function RouteComponent() {
       });
     },
     onSuccess: (order) => {
-      alert(`Narudžba ${order.orderNumber} je uspješno kreirana.`);
       navigate({
-        to: "/admin/orders",
-        search: {
-          search: "",
-          page: 1,
-          limit: 25,
-        },
+        to: "/admin/orders/$orderId",
+        params: { orderId: order.id },
       });
     },
     onError: (error: any) => {
-      alert(error.message || "Došlo je do greške pri kreiranju narudžbe.");
+      setValidationErrorMessage(
+        error.message || "Došlo je do greške pri kreiranju narudžbe."
+      );
+      setShowValidationError(true);
     },
   });
 
+  // Check if all required fields are present
+  const isOrderValid = useMemo(() => {
+    return (
+      selectedCustomer !== null &&
+      cart.length > 0 &&
+      shippingMethodId !== "" &&
+      paymentMethodId !== ""
+    );
+  }, [selectedCustomer, cart.length, shippingMethodId, paymentMethodId]);
+
   const handleCreateOrder = () => {
-    if (cart.length === 0) {
-      alert("Dodajte barem jedan proizvod u korpu.");
+    // Validate customer
+    if (!selectedCustomer) {
+      setShowCustomerError(true);
       return;
     }
+
+    // Validate cart
+    if (cart.length === 0) {
+      setValidationErrorMessage("Dodajte barem jedan proizvod u korpu.");
+      setShowValidationError(true);
+      return;
+    }
+
+    // Validate shipping method
+    if (!shippingMethodId) {
+      setValidationErrorMessage("Odaberite način dostave.");
+      setShowValidationError(true);
+      return;
+    }
+
+    // Validate payment method
+    if (!paymentMethodId) {
+      setValidationErrorMessage("Odaberite način plaćanja.");
+      setShowValidationError(true);
+      return;
+    }
+
     createOrderMutation.mutate();
   };
 
@@ -329,7 +372,7 @@ function RouteComponent() {
         <h1 className="text-2xl font-bold">Nova narudžba</h1>
         <Button
           onClick={handleCreateOrder}
-          disabled={createOrderMutation.isPending}
+          disabled={createOrderMutation.isPending || !isOrderValid}
         >
           {createOrderMutation.isPending && (
             <Loader2 className="size-4 animate-spin mr-2" />
@@ -597,7 +640,13 @@ function RouteComponent() {
                     ? `${selectedCustomer.firstName || ""} ${selectedCustomer.lastName || ""}`.trim()
                     : ""}
                 </p>
-                <p>{selectedCustomer.email}</p>
+                {selectedCustomer.email &&
+                  (selectedCustomer.hasEmail ||
+                    (!selectedCustomer.email.endsWith("@placeholder.local") &&
+                      !selectedCustomer.email.includes("customer-") &&
+                      !selectedCustomer.email.includes("@placeholder"))) && (
+                    <p>{selectedCustomer.email}</p>
+                  )}
                 {selectedCustomer.phone && <p>{selectedCustomer.phone}</p>}
                 {customerAddresses.length > 0 && (
                   <div className="mt-2 pt-2 border-t">
@@ -623,6 +672,44 @@ function RouteComponent() {
           )}
         </div>
       </div>
+
+      {/* Customer Error Dialog */}
+      <AlertDialog open={showCustomerError} onOpenChange={setShowCustomerError}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Kupac nije odabran</AlertDialogTitle>
+            <AlertDialogDescription>
+              Morate odabrati kupca prije kreiranja narudžbe. Molimo odaberite
+              postojećeg kupca ili dodajte novog kupca.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowCustomerError(false)}>
+              Razumijem
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Validation Error Dialog */}
+      <AlertDialog
+        open={showValidationError}
+        onOpenChange={setShowValidationError}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Greška pri validaciji</AlertDialogTitle>
+            <AlertDialogDescription>
+              {validationErrorMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowValidationError(false)}>
+              Razumijem
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

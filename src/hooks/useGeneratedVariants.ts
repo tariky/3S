@@ -4,90 +4,101 @@ import { Variant, GeneratedVariant } from "@/types/products";
 import { cartesianProduct } from "@/lib/utils";
 
 interface UseGeneratedVariantsOptions {
-  productPrice?: string;
-  productCost?: string;
+	productPrice?: string;
+	productCost?: string;
+	productQuantity?: string;
 }
 
 export function useGeneratedVariants(
-  variants: Variant[],
-  options?: UseGeneratedVariantsOptions
+	variants: Variant[],
+	options?: UseGeneratedVariantsOptions
 ) {
-  const [generatedVariants, setGeneratedVariants] = useState<
-    GeneratedVariant[]
-  >([]);
-  const previousCombinationKeyRef = useRef<string>("");
-  const { productPrice = "", productCost = "" } = options || {};
+	const [generatedVariants, setGeneratedVariants] = useState<
+		GeneratedVariant[]
+	>([]);
+	const previousCombinationKeyRef = useRef<string>("");
+	const {
+		productPrice = "",
+		productCost = "",
+		productQuantity = "0",
+	} = options || {};
 
-  // Generate all possible variant combinations using cartesian product
-  useEffect(() => {
-    const validVariants = variants.filter(
-      (v) => v.name && v.options.length > 0
-    );
-    
-    if (validVariants.length === 0) {
-      setGeneratedVariants([]);
-      previousCombinationKeyRef.current = "";
-      return;
-    }
+	// Generate all possible variant combinations using cartesian product
+	useEffect(() => {
+		const validVariants = variants.filter(
+			(v) => v.name && v.options.length > 0
+		);
 
-    const optionArrays = validVariants.map((v) =>
-      v.options.map((o: { id: string; name: string }) => ({
-        variantName: v.name,
-        optionName: o.name,
-        optionId: o.id,
-      }))
-    );
+		if (validVariants.length === 0) {
+			setGeneratedVariants([]);
+			previousCombinationKeyRef.current = "";
+			return;
+		}
 
-    const combinations = cartesianProduct(optionArrays);
+		const optionArrays = validVariants.map((v) =>
+			v.options.map((o: { id: string; name: string }) => ({
+				variantName: v.name,
+				optionName: o.name,
+				optionId: o.id,
+			}))
+		);
 
-    // Create a key for the entire variant structure to detect changes
-    const currentCombinationKey = validVariants
-      .map((v) => `${v.id}:${v.options.map((o: { id: string }) => o.id).join(",")}`)
-      .join("|");
+		const combinations = cartesianProduct(optionArrays);
 
-    // Only regenerate if the variant structure actually changed
-    if (currentCombinationKey === previousCombinationKeyRef.current) {
-      return;
-    }
+		// Create a key for the entire variant structure to detect changes
+		const currentCombinationKey = validVariants
+			.map(
+				(v) =>
+					`${v.id}:${v.options.map((o: { id: string }) => o.id).join(",")}`
+			)
+			.join("|");
 
-    previousCombinationKeyRef.current = currentCombinationKey;
+		// Only regenerate if the variant structure actually changed
+		if (currentCombinationKey === previousCombinationKeyRef.current) {
+			return;
+		}
 
-    // Create a key for each combination based on option IDs
-    const getCombinationKey = (combo: (typeof combinations)[0]) =>
-      combo.map((c: { optionId: string }) => c.optionId).join("-");
+		previousCombinationKeyRef.current = currentCombinationKey;
 
-    // Map existing data to preserve user input
-    setGeneratedVariants((prevGeneratedVariants) => {
-      const existingByKey = new Map(
-        prevGeneratedVariants.map((gv) => [getCombinationKey(gv.combination), gv])
-      );
+		// Create a key for each combination based on option IDs
+		const getCombinationKey = (combo: (typeof combinations)[0]) =>
+			combo.map((c: { optionId: string }) => c.optionId).join("-");
 
-      const newGeneratedVariants = combinations.map((combination) => {
-        const key = getCombinationKey(combination);
-        const existing = existingByKey.get(key);
+		// Map existing data to preserve user input
+		setGeneratedVariants((prevGeneratedVariants) => {
+			const existingByKey = new Map(
+				prevGeneratedVariants.map((gv) => [
+					getCombinationKey(gv.combination),
+					gv,
+				])
+			);
 
-        if (existing) {
-          // Update combination data but preserve user inputs
-          return {
-            ...existing,
-            combination,
-          };
-        }
+			const newGeneratedVariants = combinations.map((combination) => {
+				const key = getCombinationKey(combination);
+				const existing = existingByKey.get(key);
 
-        // Use product prices as default values for new variants
-        return {
-          id: nanoid(),
-          combination,
-          sku: "",
-          quantity: "",
-          price: productPrice || "",
-          cost: productCost || "",
-        };
-      });
+				if (existing) {
+					// Update combination data but preserve user inputs
+					return {
+						...existing,
+						combination,
+					};
+				}
 
-      return newGeneratedVariants;
-    });
-  }, [variants, productPrice, productCost]);
+				// Use product prices as default values for new variants
+				return {
+					id: nanoid(),
+					combination,
+					sku: "",
+					quantity: productQuantity || "0",
+					price: productPrice || "",
+					cost: productCost || "",
+				};
+			});
 
-  return [generatedVariants, setGeneratedVariants] as const;
+			return newGeneratedVariants;
+		});
+	}, [variants, productPrice, productCost]);
+
+	return [generatedVariants, setGeneratedVariants] as const;
 }

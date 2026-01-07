@@ -22,6 +22,9 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { loginSchema } from "@/schemas/auth";
 import { authClient } from "@/lib/auth-client";
 import { getUserRoleServerFn } from "@/server/auth.server";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { mergeCartsMutationOptions, CART_QUERY_KEY } from "@/queries/cart";
+import { useCartSession } from "@/hooks/useCartSession";
 
 interface User {
   email: string;
@@ -29,12 +32,20 @@ interface User {
 }
 const defaultUser: User = { email: "", password: "" };
 
+interface LoginFormProps extends React.ComponentProps<"div"> {
+  redirectTo?: string;
+}
+
 export function LoginForm({
   className,
+  redirectTo,
   ...props
-}: React.ComponentProps<"div">) {
+}: LoginFormProps) {
   const [error, setError] = useState<{ message: string } | null>(null);
   const navigate = useNavigate();
+  const { sessionId, clearSession } = useCartSession();
+  const queryClient = useQueryClient();
+  const mergeCartsMutation = useMutation(mergeCartsMutationOptions());
   const formOpts = formOptions({
     defaultValues: defaultUser,
   });
@@ -53,13 +64,35 @@ export function LoginForm({
         setError({ message: "Pogrešna email adresa ili lozinka" });
         return;
       } else {
+        const userId = response.data?.user.id!;
+        
+        // Merge guest cart with user cart if guest session exists
+        if (sessionId) {
+          try {
+            await mergeCartsMutation.mutateAsync({
+              guestSessionId: sessionId,
+              userId,
+            });
+            queryClient.invalidateQueries({ queryKey: [CART_QUERY_KEY] });
+            clearSession();
+          } catch (error) {
+            console.error("Error merging carts:", error);
+          }
+        }
+
         const userRole = await getUserRoleServerFn({
           data: {
-            userId: response.data?.user.id!,
+            userId,
           },
         });
-        if (userRole === "admin") navigate({ to: "/admin", replace: true });
-        else navigate({ to: "/", replace: true });
+        if (userRole === "admin") {
+          navigate({ to: "/admin", replace: true });
+        } else if (redirectTo) {
+          // Use history.push for full URL redirect
+          window.location.href = redirectTo;
+        } else {
+          navigate({ to: "/", replace: true });
+        }
       }
     },
   });
@@ -69,21 +102,22 @@ export function LoginForm({
         <CardHeader>
           <CardTitle>Prijavi se na svoj nalog</CardTitle>
           <CardDescription>
-            Unesite svoju email adresu ispod da biste se prijavili na svoj nalog
+            Unesite svoju email adresu i lozinku da biste se prijavili
           </CardDescription>
         </CardHeader>
 
         <CardContent>
           {error && (
-            <div className="px-4 py-3 flex items-center border border-red-500 rounded-md mb-6 text-red-500 text-sm">
-              <AlertTriangle className="w-4 h-4 mr-2" />{" "}
-              <span className="font-semibold text-center">{error.message}</span>
+            <div className="px-4 py-3 flex items-center border border-red-500 rounded-md mb-6 text-red-500 bg-red-50 text-sm">
+              <AlertTriangle className="w-4 h-4 mr-2" />
+              <span className="font-semibold">{error.message}</span>
             </div>
           )}
           <form
             onSubmit={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              form.handleSubmit();
             }}
           >
             <FieldGroup>
@@ -92,7 +126,7 @@ export function LoginForm({
                 <form.Field
                   name="email"
                   validators={{
-                    onBlur: ({ value }) => {
+                    onChange: ({ value }) => {
                       return loginSchema.shape.email.safeParse(value).success
                         ? undefined
                         : "Email nije validan";
@@ -108,10 +142,15 @@ export function LoginForm({
                         onChange={(e) => field.handleChange(e.target.value)}
                         placeholder="ja@gmail.com"
                         required
+                        className={
+                          field.state.meta.errors.length > 0
+                            ? "border-red-500"
+                            : ""
+                        }
                       />
                       {field.state.meta.errors.length > 0 && (
                         <FieldError
-                          errors={[{ message: "Email nije validan" }]}
+                          errors={[{ message: field.state.meta.errors[0] }]}
                         />
                       )}
                     </>
@@ -119,19 +158,24 @@ export function LoginForm({
                 />
               </Field>
               <Field>
-                <div className="flex items-center">
+                <div className="flex items-center justify-between">
                   <FieldLabel htmlFor="password">Lozinka</FieldLabel>
-                  <a
-                    href="#"
-                    className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
+                  <Link
+                    to="#"
+                    className="text-sm text-primary hover:underline"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      // TODO: Implement password reset
+                      alert("Funkcija za resetovanje lozinke će biti dostupna uskoro");
+                    }}
                   >
                     Zaboravljena lozinka?
-                  </a>
+                  </Link>
                 </div>
                 <form.Field
                   name="password"
                   validators={{
-                    onBlur: ({ value }) => {
+                    onChange: ({ value }) => {
                       return loginSchema.shape.password.safeParse(value).success
                         ? undefined
                         : "Lozinka mora biti duža od 8 karaktera";
@@ -145,15 +189,17 @@ export function LoginForm({
                         value={field.state.value}
                         onBlur={field.handleBlur}
                         onChange={(e) => field.handleChange(e.target.value)}
+                        placeholder="Unesite lozinku"
                         required
+                        className={
+                          field.state.meta.errors.length > 0
+                            ? "border-red-500"
+                            : ""
+                        }
                       />
                       {field.state.meta.errors.length > 0 && (
                         <FieldError
-                          errors={[
-                            {
-                              message: "Lozinka mora biti duža od 8 karaktera",
-                            },
-                          ]}
+                          errors={[{ message: field.state.meta.errors[0] }]}
                         />
                       )}
                     </>
@@ -162,16 +208,19 @@ export function LoginForm({
               </Field>
               <Field>
                 <form.Subscribe
-                  selector={(state) => state.isSubmitting}
-                  children={(isSubmitting) => {
+                  selector={(state) => [state.isSubmitting, state.canSubmit]}
+                  children={([isSubmitting, canSubmit]) => {
                     return (
                       <Button
                         type="submit"
-                        onClick={() => form.handleSubmit()}
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || !canSubmit}
+                        className="w-full"
                       >
                         {isSubmitting ? (
-                          <Loader className="w-4 h-4 mr-2 animate-spin" />
+                          <>
+                            <Loader className="w-4 h-4 mr-2 animate-spin" />
+                            Prijavljivanje...
+                          </>
                         ) : (
                           "Prijavi se"
                         )}
@@ -180,11 +229,14 @@ export function LoginForm({
                   }}
                 />
 
-                <Button variant="outline" type="button">
-                  Prijavi se sa Google
-                </Button>
-                <FieldDescription className="text-center">
-                  Nemate nalog? <Link to="/auth/register">Registruj se</Link>
+                <FieldDescription className="text-center mt-4">
+                  Nemate nalog?{" "}
+                  <Link 
+                    to="/auth/register" 
+                    className="text-primary hover:underline font-medium"
+                  >
+                    Registruj se
+                  </Link>
                 </FieldDescription>
               </Field>
             </FieldGroup>

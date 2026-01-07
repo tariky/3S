@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ShippingMethodsTable } from "@/components/settings/ShippingMethodsTable";
 import { PaymentMethodsTable } from "@/components/settings/PaymentMethodsTable";
+import { SkuGeneratorSettings } from "@/components/settings/SkuGeneratorSettings";
+import { NavigationManager } from "@/components/settings/NavigationManager";
 import { Separator } from "@/components/ui/separator";
 
 export const Route = createFileRoute("/admin/settings")({
@@ -18,6 +20,18 @@ function RouteComponent() {
       </div>
 
       <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4">
+          <SkuGeneratorSettings />
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-col gap-4">
+          <NavigationManager />
+        </div>
+
+        <Separator />
+
         <div className="flex flex-col gap-4">
           <div>
             <h2 className="text-xl font-semibold">Načini dostave</h2>

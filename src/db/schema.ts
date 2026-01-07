@@ -526,6 +526,7 @@ export const customers = mysqlTable(
     lastName: varchar("last_name", { length: 255 }),
     phone: varchar("phone", { length: 50 }),
     acceptsMarketing: boolean("accepts_marketing").default(false).notNull(),
+    hasEmail: boolean("has_email").default(false).notNull(),
     totalSpent: decimal("total_spent", { precision: 10, scale: 2 })
       .default("0")
       .notNull(),
@@ -866,6 +867,33 @@ export const pages = mysqlTable(
   (table) => [
     index("pages_slug_idx").on(table.slug),
     index("pages_status_idx").on(table.status),
+  ]
+);
+
+// Navigation (hierarchical navigation items for frontend)
+export const navigation = mysqlTable(
+  "navigation",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    parentId: varchar("parent_id", { length: 36 }), // Self-referencing for hierarchical structure
+    title: varchar("title", { length: 255 }).notNull(),
+    url: varchar("url", { length: 500 }).notNull(),
+    icon: varchar("icon", { length: 100 }), // Icon name (e.g., "Home", "ShoppingCart")
+    position: int("position").default(0).notNull(), // For ordering
+    createdAt: timestamp("created_at", { fsp: 3 }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { fsp: 3 })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("navigation_parentId_idx").on(table.parentId),
+    index("navigation_position_idx").on(table.position),
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "navigation_parentId_navigation_id_fk",
+    }).onDelete("cascade"),
   ]
 );
 
