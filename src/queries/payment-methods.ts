@@ -1,8 +1,6 @@
 import { db } from "@/db/db";
 import { mutationOptions, queryOptions } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
-import { paymentMethods } from "@/db/schema";
-import { count, eq, like, and, asc } from "drizzle-orm";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 
@@ -18,22 +16,22 @@ export const getPaymentMethodsServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { search = "", page = 1, limit = 25 } = data;
-    const conditions = [];
-    if (search) {
-      conditions.push(like(paymentMethods.name, `%${search}%`));
-    }
-    const response = await db
-      .select()
-      .from(paymentMethods)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(asc(paymentMethods.position))
-      .limit(limit)
-      .offset((page - 1) * limit);
-    const totalQuery = db.select({ count: count() }).from(paymentMethods);
-    const total = search
-      ? await totalQuery.where(like(paymentMethods.name, `%${search}%`))
-      : await totalQuery;
-    const totalCount = total[0].count;
+
+    const whereCondition = search
+      ? { name: { contains: search } }
+      : undefined;
+
+    const response = await db.paymentMethod.findMany({
+      where: whereCondition,
+      orderBy: { position: "asc" },
+      take: limit,
+      skip: (page - 1) * limit,
+    });
+
+    const totalCount = await db.paymentMethod.count({
+      where: whereCondition,
+    });
+
     const hasNextPage = page * limit < totalCount;
     const hasPreviousPage = page > 1;
     const nextCursor = page + 1;
@@ -59,18 +57,17 @@ export const createPaymentMethodServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const methodId = nanoid();
-    await db.insert(paymentMethods).values({
-      id: methodId,
-      name: data.name,
-      description: data.description || null,
-      active: data.active ?? true,
-      position: data.position ?? 0,
+
+    const method = await db.paymentMethod.create({
+      data: {
+        id: methodId,
+        name: data.name,
+        description: data.description || null,
+        active: data.active ?? true,
+        position: data.position ?? 0,
+      },
     });
 
-    const [method] = await db
-      .select()
-      .from(paymentMethods)
-      .where(eq(paymentMethods.id, methodId));
     return method;
   });
 
@@ -85,20 +82,16 @@ export const updatePaymentMethodServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    await db
-      .update(paymentMethods)
-      .set({
+    const method = await db.paymentMethod.update({
+      where: { id: data.id },
+      data: {
         name: data.name,
         description: data.description ?? null,
         active: data.active ?? true,
         position: data.position ?? 0,
-      })
-      .where(eq(paymentMethods.id, data.id));
+      },
+    });
 
-    const [method] = await db
-      .select()
-      .from(paymentMethods)
-      .where(eq(paymentMethods.id, data.id));
     return method;
   });
 
@@ -109,9 +102,9 @@ export const deletePaymentMethodServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    await db
-      .delete(paymentMethods)
-      .where(eq(paymentMethods.id, data.id));
+    await db.paymentMethod.delete({
+      where: { id: data.id },
+    });
     return {
       success: true,
       message: "Payment method deleted successfully",
@@ -148,11 +141,10 @@ export const getActivePaymentMethodsServerFn = createServerFn({
 })
   .inputValidator(z.object({}))
   .handler(async () => {
-    const methods = await db
-      .select()
-      .from(paymentMethods)
-      .where(eq(paymentMethods.active, true))
-      .orderBy(asc(paymentMethods.position));
+    const methods = await db.paymentMethod.findMany({
+      where: { active: true },
+      orderBy: { position: "asc" },
+    });
     return methods;
   });
 
@@ -164,4 +156,3 @@ export const getActivePaymentMethodsQueryOptions = () => {
     },
   });
 };
-

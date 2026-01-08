@@ -8,10 +8,11 @@ async function setup() {
     password: process.env.MYSQL_PASSWORD!,
   });
 
+  const dbName = process.env.MYSQL_DATABASE || "lunatik";
   console.log("Checking if database exists...");
-  await connection.query(`CREATE DATABASE IF NOT EXISTS lunatikdrizzle;`);
+  await connection.query(`CREATE DATABASE IF NOT EXISTS ${dbName};`);
 
-  console.log("Database 'lunatikdrizzle' is ready!");
+  console.log(`Database '${dbName}' is ready!`);
   await connection.end();
 }
 

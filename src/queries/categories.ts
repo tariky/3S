@@ -1,10 +1,9 @@
 import { db } from "@/db/db";
 import { mutationOptions, queryOptions } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
-import { productCategories } from "@/db/schema";
-import { count, eq, like, ne, and } from "drizzle-orm";
 import { z } from "zod";
 import { nanoid } from "nanoid";
+import { markCollectionsForRegeneration } from "@/queries/collections";
 
 export const CATEGORIES_QUERY_KEY = "categories";
 
@@ -23,15 +22,12 @@ export const slugCheckServerFn = createServerFn({ method: "POST" })
       currentSlug: string,
       currentCounter: number
     ): Promise<string> => {
-      const conditions = [eq(productCategories.slug, currentSlug)];
-      if (excludeId) {
-        conditions.push(ne(productCategories.id, excludeId));
-      }
-      
-      const categories = await db
-        .select()
-        .from(productCategories)
-        .where(and(...conditions));
+      const categories = await db.productCategory.findMany({
+        where: {
+          slug: currentSlug,
+          ...(excludeId ? { NOT: { id: excludeId } } : {}),
+        },
+      });
 
       if (categories.length > 0) {
         // Slug is occupied, try with incremented number
@@ -56,22 +52,22 @@ export const getCategoriesServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { search = "", page = 1, limit = 25 } = data;
-    const response = await db.query.productCategories.findMany({
-      where: (productCategories, { like }) => {
-        if (search) {
-          return like(productCategories.name, `%${search}%`);
-        }
-        return undefined;
-      },
-      limit: limit,
-      offset: (page - 1) * limit,
+
+    const response = await db.productCategory.findMany({
+      where: search
+        ? { name: { contains: search } }
+        : undefined,
+      take: limit,
+      skip: (page - 1) * limit,
     });
+
     // return total, hasNextPage, hasPreviousPage, nextCursor, previousCursor
-    const totalQuery = db.select({ count: count() }).from(productCategories);
-    const total = search
-      ? await totalQuery.where(like(productCategories.name, `%${search}%`))
-      : await totalQuery;
-    const totalCount = total[0].count;
+    const totalCount = await db.productCategory.count({
+      where: search
+        ? { name: { contains: search } }
+        : undefined,
+    });
+
     const hasNextPage = page * limit < totalCount;
     const hasPreviousPage = page > 1;
     const nextCursor = page + 1;
@@ -102,20 +98,18 @@ export const createCategoryServerFn = createServerFn({ method: "POST" })
     const uniqueSlug = await slugCheckServerFn({ data: { slug: baseSlug } });
     // Insert category with generated ID and unique slug
     const categoryId = nanoid();
-    await db.insert(productCategories).values({
-      id: categoryId,
-      name: data.name,
-      slug: uniqueSlug,
-      description: data.description || null,
-      image: data.image || null,
-      parentId: data.parentId || null,
+
+    const category = await db.productCategory.create({
+      data: {
+        id: categoryId,
+        name: data.name,
+        slug: uniqueSlug,
+        description: data.description || null,
+        image: data.image || null,
+        parentId: data.parentId || null,
+      },
     });
 
-    // Fetch and return the created category
-    const [category] = await db
-      .select()
-      .from(productCategories)
-      .where(eq(productCategories.id, categoryId));
     return category;
   });
 
@@ -137,22 +131,20 @@ export const updateCategoryServerFn = createServerFn({ method: "POST" })
     });
 
     // Update category with unique slug
-    await db
-      .update(productCategories)
-      .set({
+    const category = await db.productCategory.update({
+      where: { id: data.id },
+      data: {
         name: data.name,
         slug: uniqueSlug,
         description: data.description ?? null,
         image: data.image ?? null,
         parentId: data.parentId ?? null,
-      })
-      .where(eq(productCategories.id, data.id));
+      },
+    });
 
-    // Fetch and return the updated category
-    const [category] = await db
-      .select()
-      .from(productCategories)
-      .where(eq(productCategories.id, data.id));
+    // Mark collections with category rules for this specific category
+    await markCollectionsForRegeneration(["categoryId"], "category", data.id);
+
     return category;
   });
 
@@ -163,9 +155,13 @@ export const deleteCategoryServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const category = await db
-      .delete(productCategories)
-      .where(eq(productCategories.id, data.id));
+    // Mark collections before deleting (so we have the category ID)
+    await markCollectionsForRegeneration(["categoryId"], "category", data.id);
+
+    const category = await db.productCategory.delete({
+      where: { id: data.id },
+    });
+
     if (category) {
       return {
         success: true,

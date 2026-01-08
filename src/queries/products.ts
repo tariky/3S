@@ -1,24 +1,14 @@
-import { db } from "@/db/db";
+import { db, serializeData } from "@/db/db";
 import { mutationOptions, queryOptions } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
-import {
-	products,
-	productMedia,
-	media,
-	productVariants,
-	productVariantOptions,
-	productOptionValues,
-	productOptions,
-	productTags,
-	productTagsToProducts,
-	productCategories,
-	vendors,
-	inventory,
-} from "@/db/schema";
-import { eq, and, like, count, desc, asc, or } from "drizzle-orm";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { getNextSkuNumberServerFn } from "@/queries/settings";
+import type { Inventory } from "@prisma/client";
+import {
+	markCollectionsForRegeneration,
+	markAllRuleBasedCollectionsForRegeneration,
+} from "@/queries/collections";
 
 export const PRODUCTS_QUERY_KEY = "products";
 
@@ -32,18 +22,16 @@ async function generateUniqueSlug(
 
 	while (true) {
 		// Check if slug exists
-		const existingProducts = await db
-			.select({ id: products.id })
-			.from(products)
-			.where(eq(products.slug, slug));
-
-		// Filter out the excluded product if updating
-		const conflictingProducts = excludeProductId
-			? existingProducts.filter((p) => p.id !== excludeProductId)
-			: existingProducts;
+		const existingProduct = await db.product.findFirst({
+			where: {
+				slug,
+				...(excludeProductId ? { NOT: { id: excludeProductId } } : {}),
+			},
+			select: { id: true },
+		});
 
 		// If no conflicting products found, slug is unique
-		if (conflictingProducts.length === 0) {
+		if (!existingProduct) {
 			return slug;
 		}
 
@@ -68,8 +56,8 @@ export const getAllCategoriesForSelectServerFn = createServerFn({
 })
 	.inputValidator(z.object({}))
 	.handler(async () => {
-		const categories = await db.query.productCategories.findMany({
-			orderBy: (categories, { asc }) => [asc(categories.name)],
+		const categories = await db.productCategory.findMany({
+			orderBy: { name: "asc" },
 		});
 		return categories;
 	});
@@ -80,9 +68,9 @@ export const getAllVendorsForSelectServerFn = createServerFn({
 })
 	.inputValidator(z.object({}))
 	.handler(async () => {
-		const vendors = await db.query.vendors.findMany({
-			where: (vendors, { eq }) => eq(vendors.active, true),
-			orderBy: (vendors, { asc }) => [asc(vendors.name)],
+		const vendors = await db.vendor.findMany({
+			where: { active: true },
+			orderBy: { name: "asc" },
 		});
 		return vendors;
 	});
@@ -93,8 +81,8 @@ export const getAllTagsForSelectServerFn = createServerFn({
 })
 	.inputValidator(z.object({}))
 	.handler(async () => {
-		const tags = await db.query.productTags.findMany({
-			orderBy: (tags, { asc }) => [asc(tags.name)],
+		const tags = await db.productTag.findMany({
+			orderBy: { name: "asc" },
 		});
 		return tags;
 	});
@@ -109,8 +97,8 @@ export const createOrGetTagServerFn = createServerFn({ method: "POST" })
 			.replace(/(^-|-$)/g, "");
 
 		// Check if tag exists
-		const existingTag = await db.query.productTags.findFirst({
-			where: (tags, { eq }) => eq(tags.slug, slug),
+		const existingTag = await db.productTag.findFirst({
+			where: { slug },
 		});
 
 		if (existingTag) {
@@ -118,17 +106,13 @@ export const createOrGetTagServerFn = createServerFn({ method: "POST" })
 		}
 
 		// Create new tag
-		const tagId = nanoid();
-		await db.insert(productTags).values({
-			id: tagId,
-			name: data.name,
-			slug,
+		const newTag = await db.productTag.create({
+			data: {
+				id: nanoid(),
+				name: data.name,
+				slug,
+			},
 		});
-
-		const [newTag] = await db
-			.select()
-			.from(productTags)
-			.where(eq(productTags.id, tagId));
 
 		return newTag;
 	});
@@ -149,27 +133,24 @@ export const createMediaServerFn = createServerFn({ method: "POST" })
 		})
 	)
 	.handler(async ({ data }) => {
-		const mediaId = nanoid();
-		await db.insert(media).values({
-			id: mediaId,
-			filename: data.filename,
-			originalFilename: data.originalFilename,
-			mimeType: data.mimeType,
-			size: data.size,
-			url: data.url,
-			alt: data.alt || null,
-			type: data.type,
-			storage: data.storage,
-			metadata: data.metadata || null,
+		const createdMedia = await db.media.create({
+			data: {
+				id: nanoid(),
+				filename: data.filename,
+				originalFilename: data.originalFilename,
+				mimeType: data.mimeType,
+				size: data.size,
+				url: data.url,
+				alt: data.alt || null,
+				type: data.type,
+				storage: data.storage,
+				metadata: data.metadata || null,
+			},
 		});
 
-		const [createdMedia] = await db
-			.select()
-			.from(media)
-			.where(eq(media.id, mediaId));
 		return {
 			...createdMedia,
-			metadata: (createdMedia.metadata as {}) || {},
+			metadata: (createdMedia.metadata as object) || {},
 		};
 	});
 
@@ -210,12 +191,12 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 			variantDefinitions: z
 				.array(
 					z.object({
-						id: z.string(), // Temporary ID from form
+						id: z.string(),
 						name: z.string(),
 						position: z.number(),
 						options: z.array(
 							z.object({
-								id: z.string(), // Temporary ID from form
+								id: z.string(),
 								name: z.string(),
 								position: z.number(),
 							})
@@ -236,7 +217,7 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 							z.object({
 								variantName: z.string(),
 								optionName: z.string(),
-								optionId: z.string(), // Temporary ID from form
+								optionId: z.string(),
 							})
 						),
 						position: z.number().default(0),
@@ -265,75 +246,77 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 				productSku = await getNextSkuNumberServerFn({ data: {} });
 			} catch (error) {
 				console.error("Error generating SKU:", error);
-				// Fallback: use product ID as SKU if generation fails
 				productSku = `SKU-${productId.slice(0, 8).toUpperCase()}`;
 			}
 		}
 
 		// Insert product
-		await db.insert(products).values({
-			id: productId,
-			name: data.name,
-			slug,
-			description: data.description || null,
-			sku: productSku,
-			price: String(data.price),
-			compareAtPrice: data.compareAtPrice
-				? String(data.compareAtPrice)
-				: null,
-			cost: data.cost ? String(data.cost) : null,
-			trackQuantity: data.trackQuantity,
-			status: data.status,
-			featured: data.featured,
-			vendorId: data.vendorId || null,
-			categoryId: data.categoryId || null,
-			material: data.material || null,
-			weight: String(data.weight),
-			weightUnit: data.weightUnit || "kg",
-			requiresShipping: data.requiresShipping,
-			taxIncluded: data.taxIncluded,
-			internalNote: data.internalNote || null,
+		await db.product.create({
+			data: {
+				id: productId,
+				name: data.name,
+				slug,
+				description: data.description || null,
+				sku: productSku,
+				price: Number(data.price),
+				compareAtPrice: data.compareAtPrice && Number(data.compareAtPrice) > 0 ? Number(data.compareAtPrice) : null,
+				cost: data.cost && Number(data.cost) > 0 ? Number(data.cost) : null,
+				trackQuantity: data.trackQuantity,
+				status: data.status,
+				featured: data.featured,
+				vendorId: data.vendorId || null,
+				categoryId: data.categoryId || null,
+				material: data.material || null,
+				weight: Number(data.weight),
+				weightUnit: data.weightUnit || "kg",
+				requiresShipping: data.requiresShipping,
+				taxIncluded: data.taxIncluded,
+				internalNote: data.internalNote || null,
+			},
 		});
 
 		// Insert product media
 		if (data.media && data.media.length > 0) {
-			const mediaRecords = data.media.map((m) => ({
-				id: nanoid(),
-				productId,
-				mediaId: m.mediaId,
-				position: m.position,
-				isPrimary: m.isPrimary,
-			}));
-			await db.insert(productMedia).values(mediaRecords);
+			await db.productMedia.createMany({
+				data: data.media.map((m) => ({
+					id: nanoid(),
+					productId,
+					mediaId: m.mediaId,
+					position: m.position,
+					isPrimary: m.isPrimary,
+				})),
+			});
 		}
 
 		// Create product options and option values if variant definitions exist
-		const optionIdMap = new Map<string, string>(); // Maps temporary option IDs to database option IDs
-		const optionValueIdMap = new Map<string, string>(); // Maps temporary option value IDs to database optionValueIds
+		const optionIdMap = new Map<string, string>();
+		const optionValueIdMap = new Map<string, string>();
 
 		if (data.variantDefinitions && data.variantDefinitions.length > 0) {
-			// Create product options (variant definitions like "Size", "Color")
 			for (const variantDef of data.variantDefinitions) {
 				const optionId = nanoid();
 				optionIdMap.set(variantDef.id, optionId);
 
-				await db.insert(productOptions).values({
-					id: optionId,
-					productId,
-					name: variantDef.name,
-					position: variantDef.position,
+				await db.productOption.create({
+					data: {
+						id: optionId,
+						productId,
+						name: variantDef.name,
+						position: variantDef.position,
+					},
 				});
 
-				// Create product option values (like "S", "M", "L" for Size)
 				for (const optionValue of variantDef.options) {
 					const optionValueId = nanoid();
 					optionValueIdMap.set(optionValue.id, optionValueId);
 
-					await db.insert(productOptionValues).values({
-						id: optionValueId,
-						optionId,
-						name: optionValue.name,
-						position: optionValue.position,
+					await db.productOptionValue.create({
+						data: {
+							id: optionValueId,
+							optionId,
+							name: optionValue.name,
+							position: optionValue.position,
+						},
 					});
 				}
 			}
@@ -341,35 +324,30 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 
 		// Insert product variants
 		if (data.generatedVariants && data.generatedVariants.length > 0) {
-			// Create variants from generated variants
 			for (let index = 0; index < data.generatedVariants.length; index++) {
 				const generatedVariant = data.generatedVariants[index];
 				const variantId = nanoid();
 
-				// Generate variant SKU if not provided
 				let variantSku = generatedVariant.sku;
 				if (!variantSku || variantSku.trim() === "") {
 					variantSku = `${productSku}-${index + 1}`;
 				}
 
-				await db.insert(productVariants).values({
-					id: variantId,
-					productId,
-					sku: variantSku,
-					price: generatedVariant.price
-						? String(generatedVariant.price)
-						: null,
-					cost: generatedVariant.cost
-						? String(generatedVariant.cost)
-						: null,
-					position: generatedVariant.position,
-					isDefault: generatedVariant.position === 0, // First variant is default
+				await db.productVariant.create({
+					data: {
+						id: variantId,
+						productId,
+						sku: variantSku,
+						price: generatedVariant.price ? Number(generatedVariant.price) : null,
+						cost: generatedVariant.cost ? Number(generatedVariant.cost) : null,
+						position: generatedVariant.position,
+						isDefault: generatedVariant.position === 0,
+					},
 				});
 
-				// Create product variant options (link variant to its option values)
+				// Create product variant options
 				if (data.variantDefinitions && data.variantDefinitions.length > 0) {
 					for (const combo of generatedVariant.combination) {
-						// Find the option ID for this variant name
 						const variantDef = data.variantDefinitions.find(
 							(vd) => vd.name === combo.variantName
 						);
@@ -379,84 +357,85 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 						const dbOptionValueId = optionValueIdMap.get(combo.optionId);
 
 						if (dbOptionId && dbOptionValueId) {
-							await db.insert(productVariantOptions).values({
-								id: nanoid(),
-								variantId,
-								optionId: dbOptionId,
-								optionValueId: dbOptionValueId,
+							await db.productVariantOption.create({
+								data: {
+									id: nanoid(),
+									variantId,
+									optionId: dbOptionId,
+									optionValueId: dbOptionValueId,
+								},
 							});
 						}
 					}
 				}
 
 				// Create inventory record if quantity is provided
-				if (
-					generatedVariant.quantity !== null &&
-					generatedVariant.quantity !== undefined
-				) {
+				if (generatedVariant.quantity !== null && generatedVariant.quantity !== undefined) {
 					const quantityValue = parseInt(generatedVariant.quantity) || 0;
-					await db.insert(inventory).values({
-						id: nanoid(),
-						variantId,
-						onHand: quantityValue,
-						available: quantityValue,
-						reserved: 0,
-						committed: 0,
+					await db.inventory.create({
+						data: {
+							id: nanoid(),
+							variantId,
+							onHand: quantityValue,
+							available: quantityValue,
+							reserved: 0,
+							committed: 0,
+						},
 					});
 				}
 			}
 		} else {
-			// No variants - create a single default variant with product's base price/cost
+			// No variants - create a single default variant
 			const defaultVariantId = nanoid();
-			await db.insert(productVariants).values({
-				id: defaultVariantId,
-				productId,
-				sku: productSku,
-				price: String(data.price),
-				compareAtPrice: data.compareAtPrice
-					? String(data.compareAtPrice)
-					: null,
-				cost: data.cost ? String(data.cost) : null,
-				weight: String(data.weight),
-				position: 0,
-				isDefault: true,
+			await db.productVariant.create({
+				data: {
+					id: defaultVariantId,
+					productId,
+					sku: productSku,
+					price: Number(data.price),
+					compareAtPrice: data.compareAtPrice && Number(data.compareAtPrice) > 0 ? Number(data.compareAtPrice) : null,
+					cost: data.cost && Number(data.cost) > 0 ? Number(data.cost) : null,
+					weight: Number(data.weight),
+					position: 0,
+					isDefault: true,
+				},
 			});
-			// Create inventory records if quantity is provided
-			if (
-				data.availableQuantity !== null &&
-				data.availableQuantity !== undefined
-			) {
-				await db.insert(inventory).values({
-					id: nanoid(),
-					variantId: defaultVariantId,
-					available: data.availableQuantity
-						? parseInt(data.availableQuantity)
-						: 0,
-					onHand: data.availableQuantity
-						? parseInt(data.availableQuantity)
-						: 0,
-					reserved: 0,
-					committed: 0,
+
+			if (data.availableQuantity !== null && data.availableQuantity !== undefined) {
+				await db.inventory.create({
+					data: {
+						id: nanoid(),
+						variantId: defaultVariantId,
+						available: data.availableQuantity ? parseInt(data.availableQuantity) : 0,
+						onHand: data.availableQuantity ? parseInt(data.availableQuantity) : 0,
+						reserved: 0,
+						committed: 0,
+					},
 				});
 			}
 		}
 
 		// Insert product tags
 		if (data.tagIds && data.tagIds.length > 0) {
-			const tagRecords = data.tagIds.map((tagId) => ({
-				productId,
-				tagId,
-			}));
-			await db.insert(productTagsToProducts).values(tagRecords);
+			await db.productTagsToProduct.createMany({
+				data: data.tagIds.map((tagId) => ({
+					productId,
+					tagId,
+				})),
+			});
 		}
 
-		// Fetch and return the created product with relations
-		const [createdProduct] = await db
-			.select()
-			.from(products)
-			.where(eq(products.id, productId));
+		const createdProduct = await db.product.findUnique({
+			where: { id: productId },
+		});
 
-		return createdProduct;
+		// Mark collections for regeneration if product is active
+		if (data.status === "active") {
+			// New active product could match any rule-based collection
+			await markAllRuleBasedCollectionsForRegeneration();
+		}
+
+		return serializeData(createdProduct);
 	});
 
 export const createProductMutationOptions = () => {
@@ -483,89 +462,46 @@ export const getProductsServerFn = createServerFn({ method: "POST" })
 	.handler(async ({ data }) => {
 		const { search = "", status, categoryId, page = 1, limit = 25 } = data;
 
-		// Build where conditions
-		const conditions = [];
+		const where: any = {};
+
 		if (search) {
-			conditions.push(
-				or(
-					like(products.name, `%${search}%`),
-					like(products.sku, `%${search}%`)
-				)!
-			);
+			where.OR = [
+				{ name: { contains: search } },
+				{ sku: { contains: search } },
+			];
 		}
 		if (status) {
-			conditions.push(eq(products.status, status));
+			where.status = status;
 		}
 		if (categoryId) {
-			conditions.push(eq(products.categoryId, categoryId));
+			where.categoryId = categoryId;
 		}
 
-		// Fetch products with manual joins
-		const productsQuery = db
-			.select({
-				product: products,
-				category: productCategories,
-				vendor: vendors,
-			})
-			.from(products)
-			.leftJoin(
-				productCategories,
-				eq(products.categoryId, productCategories.id)
-			)
-			.leftJoin(vendors, eq(products.vendorId, vendors.id))
-			.where(conditions.length > 0 ? and(...conditions) : undefined)
-			.orderBy(desc(products.createdAt))
-			.limit(limit)
-			.offset((page - 1) * limit);
+		const [products, totalCount] = await Promise.all([
+			db.product.findMany({
+				where,
+				include: {
+					category: true,
+					vendor: true,
+				},
+				orderBy: { createdAt: "desc" },
+				take: limit,
+				skip: (page - 1) * limit,
+			}),
+			db.product.count({ where }),
+		]);
 
-		const response = await productsQuery;
-
-		// Transform the response to match expected format
-		const transformedResponse = response.map((row) => ({
-			...row.product,
-			category: row.category || null,
-			vendor: row.vendor || null,
-		}));
-
-		// Build total count query with same conditions
-		const totalConditions = [];
-		if (search) {
-			totalConditions.push(
-				or(
-					like(products.name, `%${search}%`),
-					like(products.sku, `%${search}%`)
-				)!
-			);
-		}
-		if (status) {
-			totalConditions.push(eq(products.status, status));
-		}
-		if (categoryId) {
-			totalConditions.push(eq(products.categoryId, categoryId));
-		}
-
-		const totalQuery = db
-			.select({ count: count() })
-			.from(products)
-			.where(
-				totalConditions.length > 0 ? and(...totalConditions) : undefined
-			);
-
-		const total = await totalQuery;
-		const totalCount = total[0].count;
 		const hasNextPage = page * limit < totalCount;
 		const hasPreviousPage = page > 1;
-		const nextCursor = page + 1;
-		const previousCursor = page - 1;
 
-		return {
-			data: transformedResponse,
+		return serializeData({
+			data: products,
 			total: totalCount,
 			hasNextPage,
 			hasPreviousPage,
-			nextCursor,
-			previousCursor,
-		};
+			nextCursor: page + 1,
+			previousCursor: page - 1,
+		});
 	});
 
 export const getAllProductsQueryOptions = (opts: {
@@ -583,7 +519,7 @@ export const getAllProductsQueryOptions = (opts: {
 	});
 };
 
-// Search products for order creation (simplified with variants and inventory)
+// Search products for order creation
 export const searchProductsForOrderServerFn = createServerFn({ method: "POST" })
 	.inputValidator(
 		z.object({
@@ -593,269 +529,145 @@ export const searchProductsForOrderServerFn = createServerFn({ method: "POST" })
 	)
 	.handler(async ({ data }) => {
 		const { search, limit = 20 } = data;
-		const conditions = [eq(products.status, "active")];
 
+		const where: any = { status: "active" };
 		if (search && search.trim().length > 0) {
-			conditions.push(
-				or(
-					like(products.name, `%${search}%`),
-					like(products.sku, `%${search}%`)
-				)!
-			);
+			where.OR = [
+				{ name: { contains: search } },
+				{ sku: { contains: search } },
+			];
 		}
 
-		// Get products
-		const productsList = await db
-			.select({
-				product: products,
-			})
-			.from(products)
-			.where(and(...conditions))
-			.orderBy(desc(products.createdAt))
-			.limit(limit);
+		const products = await db.product.findMany({
+			where,
+			orderBy: { createdAt: "desc" },
+			take: limit,
+		});
 
-		// Get primary images for each product
-		const productsWithImages = await Promise.all(
-			productsList.map(async (row) => {
-				const primaryMediaRow = await db
-					.select({
-						media: media,
-					})
-					.from(productMedia)
-					.leftJoin(media, eq(productMedia.mediaId, media.id))
-					.where(
-						and(
-							eq(productMedia.productId, row.product.id),
-							eq(productMedia.isPrimary, true)
-						)
-					)
-					.limit(1);
+		// Get primary images and variants for each product
+		const productsWithDetails = await Promise.all(
+			products.map(async (product) => {
+				const primaryMedia = await db.productMedia.findFirst({
+					where: {
+						productId: product.id,
+						isPrimary: true,
+					},
+					include: { media: true },
+				});
 
-				return {
-					...row.product,
-					primaryImage: primaryMediaRow[0]?.media?.url || null,
-				};
-			})
-		);
-
-		// Get variants and inventory for each product
-		const productsWithVariants = await Promise.all(
-			productsWithImages.map(async (product) => {
-				const variantsRows = await db
-					.select({
-						variant: productVariants,
-						inventory: inventory,
-					})
-					.from(productVariants)
-					.leftJoin(inventory, eq(productVariants.id, inventory.variantId))
-					.where(eq(productVariants.productId, product.id))
-					.orderBy(asc(productVariants.position));
-
-				// Get variant options for each variant
-				const variants = await Promise.all(
-					variantsRows.map(async (v) => {
-						const variantOptionsRows = await db
-							.select({
-								variantOption: productVariantOptions,
-								optionValue: productOptionValues,
-								option: productOptions,
-							})
-							.from(productVariantOptions)
-							.leftJoin(
-								productOptionValues,
-								eq(
-									productVariantOptions.optionValueId,
-									productOptionValues.id
-								)
-							)
-							.leftJoin(
-								productOptions,
-								eq(productOptionValues.optionId, productOptions.id)
-							)
-							.where(eq(productVariantOptions.variantId, v.variant.id));
-
-						const variantOptions = variantOptionsRows.map((row) => ({
-							...row.variantOption,
-							optionValue: row.optionValue
-								? {
-										...row.optionValue,
-										option: row.option || null,
-									}
-								: null,
-						}));
-
-						return {
-							...v.variant,
-							inventory: v.inventory || {
-								available: 0,
-								reserved: 0,
-								onHand: 0,
-								committed: 0,
+				const variants = await db.productVariant.findMany({
+					where: { productId: product.id },
+					include: {
+						inventory: true,
+						variantOptions: {
+							include: {
+								optionValue: {
+									include: { option: true },
+								},
 							},
-							variantOptions,
-						};
-					})
-				);
+						},
+					},
+					orderBy: { position: "asc" },
+				});
 
 				return {
 					...product,
-					variants,
+					primaryImage: primaryMedia?.media?.url || null,
+					variants: variants.map((v) => ({
+						...v,
+						inventory: v.inventory || {
+							available: 0,
+							reserved: 0,
+							onHand: 0,
+							committed: 0,
+						},
+						variantOptions: v.variantOptions.map((vo) => ({
+							...vo,
+							optionValue: vo.optionValue
+								? {
+										...vo.optionValue,
+										option: vo.optionValue.option || null,
+									}
+								: null,
+						})),
+					})),
 				};
 			})
 		);
 
-		return productsWithVariants;
+		return serializeData(productsWithDetails);
 	});
 
 // Get product by ID with all relations
 export const getProductByIdServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ productId: z.string() }))
 	.handler(async ({ data }) => {
-		// Fetch product with category and vendor
-		const [productRow] = await db
-			.select({
-				product: products,
-				category: productCategories,
-				vendor: vendors,
-			})
-			.from(products)
-			.leftJoin(
-				productCategories,
-				eq(products.categoryId, productCategories.id)
-			)
-			.leftJoin(vendors, eq(products.vendorId, vendors.id))
-			.where(eq(products.id, data.productId))
-			.limit(1);
+		const product = await db.product.findUnique({
+			where: { id: data.productId },
+			include: {
+				category: true,
+				vendor: true,
+				media: {
+					include: { media: true },
+					orderBy: { position: "asc" },
+				},
+				options: {
+					include: { values: { orderBy: { position: "asc" } } },
+					orderBy: { position: "asc" },
+				},
+				variants: {
+					include: {
+						inventory: true,
+						variantOptions: {
+							include: {
+								optionValue: {
+									include: { option: true },
+								},
+							},
+						},
+					},
+					orderBy: { position: "asc" },
+				},
+				tags: {
+					include: { tag: true },
+				},
+			},
+		});
 
-		if (!productRow?.product) {
+		if (!product) {
 			throw new Error("Product not found");
 		}
 
-		const product = productRow.product;
-
-		// Fetch media
-		const mediaRows = await db
-			.select({
-				productMedia: productMedia,
-				media: media,
-			})
-			.from(productMedia)
-			.leftJoin(media, eq(productMedia.mediaId, media.id))
-			.where(eq(productMedia.productId, data.productId))
-			.orderBy(asc(productMedia.position));
-
-		// Fetch options with values
-		const optionsRows = await db
-			.select({
-				option: productOptions,
-			})
-			.from(productOptions)
-			.where(eq(productOptions.productId, data.productId))
-			.orderBy(asc(productOptions.position));
-
-		const options = await Promise.all(
-			optionsRows.map(async (optRow) => {
-				const values = await db
-					.select()
-					.from(productOptionValues)
-					.where(eq(productOptionValues.optionId, optRow.option.id))
-					.orderBy(asc(productOptionValues.position));
-
-				return {
-					...optRow.option,
-					values,
-				};
-			})
-		);
-
-		// Fetch variants with variant options and inventory
-		const variantsRows = await db
-			.select({
-				variant: productVariants,
-				inventory: inventory,
-			})
-			.from(productVariants)
-			.leftJoin(inventory, eq(productVariants.id, inventory.variantId))
-			.where(eq(productVariants.productId, data.productId))
-			.orderBy(asc(productVariants.position));
-
-		const variants = await Promise.all(
-			variantsRows.map(async (row) => {
-				const variant = row.variant;
-				const variantOptionsRows = await db
-					.select({
-						variantOption: productVariantOptions,
-						optionValue: productOptionValues,
-						option: productOptions,
-					})
-					.from(productVariantOptions)
-					.leftJoin(
-						productOptionValues,
-						eq(
-							productVariantOptions.optionValueId,
-							productOptionValues.id
-						)
-					)
-					.leftJoin(
-						productOptions,
-						eq(productOptionValues.optionId, productOptions.id)
-					)
-					.where(eq(productVariantOptions.variantId, variant.id));
-
-				const variantOptions = variantOptionsRows.map((voRow) => ({
-					...voRow.variantOption,
-					optionValue: voRow.optionValue
+		// Transform to match expected format
+		return serializeData({
+			...product,
+			media: product.media.map((pm) => ({
+				...pm,
+				media: pm.media
+					? {
+							...pm.media,
+							metadata: (pm.media.metadata as object) || {},
+						}
+					: null,
+			})),
+			variants: product.variants.map((v) => ({
+				...v,
+				variantOptions: v.variantOptions.map((vo) => ({
+					...vo,
+					optionValue: vo.optionValue
 						? {
-								...voRow.optionValue,
-								option: voRow.option || null,
+								...vo.optionValue,
+								option: vo.optionValue.option || null,
 							}
 						: null,
-				}));
-
-				return {
-					...variant,
-					inventory: row.inventory || null,
-					variantOptions,
-				};
-			})
-		);
-
-		// Fetch tags
-		const tagsRows = await db
-			.select({
-				productTag: productTagsToProducts,
-				tag: productTags,
-			})
-			.from(productTagsToProducts)
-			.leftJoin(productTags, eq(productTagsToProducts.tagId, productTags.id))
-			.where(eq(productTagsToProducts.productId, data.productId));
-
-		const tags = tagsRows.map((row) => ({
-			productId: row.productTag.productId,
-			tagId: row.productTag.tagId,
-			tag: row.tag,
-		}));
-
-		// Transform media
-		const mediaItems = mediaRows.map((row) => ({
-			...row.productMedia,
-			media: row.media
-				? {
-						...row.media,
-						metadata: (row.media.metadata as {}) || {},
-					}
-				: null,
-		}));
-
-		return {
-			...product,
-			category: productRow.category || null,
-			vendor: productRow.vendor || null,
-			media: mediaItems,
-			options,
-			variants,
-			tags,
-		};
+				})),
+			})),
+			tags: product.tags.map((t) => ({
+				productId: t.productId,
+				tagId: t.tagId,
+				tag: t.tag,
+			})),
+		});
 	});
 
 // Update product
@@ -896,12 +708,12 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 				variantDefinitions: z
 					.array(
 						z.object({
-							id: z.string().optional(), // Optional for existing options
+							id: z.string().optional(),
 							name: z.string(),
 							position: z.number(),
 							options: z.array(
 								z.object({
-									id: z.string().optional(), // Optional for existing values
+									id: z.string().optional(),
 									name: z.string(),
 									position: z.number(),
 								})
@@ -913,7 +725,7 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 				generatedVariants: z
 					.array(
 						z.object({
-							id: z.string().optional(), // Optional for existing variants
+							id: z.string().optional(),
 							sku: z.string().optional().nullable(),
 							quantity: z.string().optional().nullable(),
 							price: z.string().optional().nullable(),
@@ -942,17 +754,25 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 				.replace(/[^a-z0-9]+/g, "-")
 				.replace(/(^-|-$)/g, "");
 
-		// Generate unique slug (excluding current product)
 		const slug = await generateUniqueSlug(baseSlug, productId);
 
-		// Get current product to check if it has SKU
-		const [currentProduct] = await db
-			.select()
-			.from(products)
-			.where(eq(products.id, productId))
-			.limit(1);
+		const currentProduct = await db.product.findUnique({
+			where: { id: productId },
+			include: {
+				tags: { select: { tagId: true } },
+			},
+		});
 
-		// Generate SKU if not provided and product doesn't have one
+		// Track old values for collection regeneration comparison
+		const oldValues = {
+			price: currentProduct?.price,
+			compareAtPrice: currentProduct?.compareAtPrice,
+			status: currentProduct?.status,
+			categoryId: currentProduct?.categoryId,
+			vendorId: currentProduct?.vendorId,
+			tagIds: currentProduct?.tags?.map((t) => t.tagId) || [],
+		};
+
 		let productSku = updateData.sku;
 		if (
 			(!productSku || productSku.trim() === "") &&
@@ -962,79 +782,66 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 				productSku = await getNextSkuNumberServerFn({ data: {} });
 			} catch (error) {
 				console.error("Error generating SKU:", error);
-				// Keep existing SKU or use fallback
-				productSku =
-					currentProduct?.sku ||
-					`SKU-${productId.slice(0, 8).toUpperCase()}`;
+				productSku = currentProduct?.sku || `SKU-${productId.slice(0, 8).toUpperCase()}`;
 			}
 		} else if (!productSku || productSku.trim() === "") {
-			// Keep existing SKU if not updating it
 			productSku = currentProduct?.sku || null;
 		}
 
 		// Update product
-		await db
-			.update(products)
-			.set({
+		await db.product.update({
+			where: { id: productId },
+			data: {
 				name: updateData.name,
 				slug,
 				description: updateData.description || null,
 				sku: productSku,
-				price: String(updateData.price),
-				compareAtPrice: updateData.compareAtPrice
-					? String(updateData.compareAtPrice)
-					: null,
-				cost: updateData.cost ? String(updateData.cost) : null,
+				price: Number(updateData.price),
+				compareAtPrice: updateData.compareAtPrice && Number(updateData.compareAtPrice) > 0 ? Number(updateData.compareAtPrice) : null,
+				cost: updateData.cost && Number(updateData.cost) > 0 ? Number(updateData.cost) : null,
 				trackQuantity: updateData.trackQuantity,
 				status: updateData.status,
 				featured: updateData.featured,
 				vendorId: updateData.vendorId || null,
 				categoryId: updateData.categoryId || null,
 				material: updateData.material || null,
-				weight: String(updateData.weight),
+				weight: Number(updateData.weight),
 				weightUnit: updateData.weightUnit || "kg",
 				requiresShipping: updateData.requiresShipping,
 				taxIncluded: updateData.taxIncluded,
 				internalNote: updateData.internalNote || null,
-			})
-			.where(eq(products.id, productId));
+			},
+		});
 
-		// Update product media (delete old, insert new)
-		await db
-			.delete(productMedia)
-			.where(eq(productMedia.productId, productId));
-
+		// Update product media
+		await db.productMedia.deleteMany({ where: { productId } });
 		if (updateData.media && updateData.media.length > 0) {
-			const mediaRecords = updateData.media.map((m) => ({
-				id: nanoid(),
-				productId,
-				mediaId: m.mediaId,
-				position: m.position,
-				isPrimary: m.isPrimary,
-			}));
-			await db.insert(productMedia).values(mediaRecords);
+			await db.productMedia.createMany({
+				data: updateData.media.map((m) => ({
+					id: nanoid(),
+					productId,
+					mediaId: m.mediaId,
+					position: m.position,
+					isPrimary: m.isPrimary,
+				})),
+			});
 		}
 
 		// Update product tags
-		await db
-			.delete(productTagsToProducts)
-			.where(eq(productTagsToProducts.productId, productId));
-
+		await db.productTagsToProduct.deleteMany({ where: { productId } });
 		if (updateData.tagIds && updateData.tagIds.length > 0) {
-			const productTagRelations = updateData.tagIds.map((tagId) => ({
-				productId,
-				tagId,
-			}));
-			await db.insert(productTagsToProducts).values(productTagRelations);
+			await db.productTagsToProduct.createMany({
+				data: updateData.tagIds.map((tagId) => ({
+					productId,
+					tagId,
+				})),
+			});
 		}
 
-		// Handle variant definitions and variants (simplified - delete and recreate)
-		// Delete existing variants and options
-		const existingVariants = await db.query.productVariants.findMany({
-			where: (variants, { eq }) => eq(variants.productId, productId),
+		// Get existing variants for SKU preservation
+		const existingVariants = await db.productVariant.findMany({
+			where: { productId },
 		});
-
-		// Create a map of existing variant SKUs before deletion
 		const existingVariantSkuMap = new Map<string, string>();
 		for (const variant of existingVariants) {
 			if (variant.sku) {
@@ -1042,114 +849,81 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 			}
 		}
 
+		// Delete existing variant options, variants, option values, and options
 		for (const variant of existingVariants) {
-			await db
-				.delete(productVariantOptions)
-				.where(eq(productVariantOptions.variantId, variant.id));
+			await db.productVariantOption.deleteMany({ where: { variantId: variant.id } });
 		}
+		await db.productVariant.deleteMany({ where: { productId } });
 
-		await db
-			.delete(productVariants)
-			.where(eq(productVariants.productId, productId));
-
-		const existingOptions = await db.query.productOptions.findMany({
-			where: (options, { eq }) => eq(options.productId, productId),
-		});
-
+		const existingOptions = await db.productOption.findMany({ where: { productId } });
 		for (const option of existingOptions) {
-			await db
-				.delete(productOptionValues)
-				.where(eq(productOptionValues.optionId, option.id));
+			await db.productOptionValue.deleteMany({ where: { optionId: option.id } });
 		}
+		await db.productOption.deleteMany({ where: { productId } });
 
-		await db
-			.delete(productOptions)
-			.where(eq(productOptions.productId, productId));
-
-		// Recreate variant definitions and variants (same logic as create)
+		// Recreate variant definitions and variants
 		const optionIdMap = new Map<string, string>();
 		const optionValueIdMap = new Map<string, string>();
 
-		if (
-			updateData.variantDefinitions &&
-			updateData.variantDefinitions.length > 0
-		) {
+		if (updateData.variantDefinitions && updateData.variantDefinitions.length > 0) {
 			for (const variantDef of updateData.variantDefinitions) {
 				const optionId = variantDef.id || nanoid();
 				optionIdMap.set(variantDef.id || optionId, optionId);
 
-				await db.insert(productOptions).values({
-					id: optionId,
-					productId,
-					name: variantDef.name,
-					position: variantDef.position,
+				await db.productOption.create({
+					data: {
+						id: optionId,
+						productId,
+						name: variantDef.name,
+						position: variantDef.position,
+					},
 				});
 
 				for (const optionValue of variantDef.options) {
 					const optionValueId = optionValue.id || nanoid();
-					optionValueIdMap.set(
-						optionValue.id || optionValueId,
-						optionValueId
-					);
+					optionValueIdMap.set(optionValue.id || optionValueId, optionValueId);
 
-					await db.insert(productOptionValues).values({
-						id: optionValueId,
-						optionId,
-						name: optionValue.name,
-						position: optionValue.position,
+					await db.productOptionValue.create({
+						data: {
+							id: optionValueId,
+							optionId,
+							name: optionValue.name,
+							position: optionValue.position,
+						},
 					});
 				}
 			}
 		}
 
-		if (
-			updateData.generatedVariants &&
-			updateData.generatedVariants.length > 0
-		) {
-			// Get product SKU for variant generation
+		if (updateData.generatedVariants && updateData.generatedVariants.length > 0) {
 			const finalProductSku = productSku || currentProduct?.sku || "";
 
-			for (
-				let index = 0;
-				index < updateData.generatedVariants.length;
-				index++
-			) {
+			for (let index = 0; index < updateData.generatedVariants.length; index++) {
 				const generatedVariant = updateData.generatedVariants[index];
 				const variantId = generatedVariant.id || nanoid();
 
-				// Generate variant SKU if not provided
 				let variantSku = generatedVariant.sku;
 				if (!variantSku || variantSku.trim() === "") {
-					// If variant has ID, try to preserve existing SKU
-					if (
-						generatedVariant.id &&
-						existingVariantSkuMap.has(generatedVariant.id)
-					) {
+					if (generatedVariant.id && existingVariantSkuMap.has(generatedVariant.id)) {
 						variantSku = existingVariantSkuMap.get(generatedVariant.id)!;
 					} else if (finalProductSku) {
-						// Generate new variant SKU based on product SKU
 						variantSku = `${finalProductSku}-${index + 1}`;
 					}
 				}
 
-				await db.insert(productVariants).values({
-					id: variantId,
-					productId,
-					sku: variantSku,
-					price: generatedVariant.price
-						? String(generatedVariant.price)
-						: null,
-					cost: generatedVariant.cost
-						? String(generatedVariant.cost)
-						: null,
-					position: generatedVariant.position,
-					isDefault: generatedVariant.position === 0,
+				await db.productVariant.create({
+					data: {
+						id: variantId,
+						productId,
+						sku: variantSku,
+						price: generatedVariant.price ? Number(generatedVariant.price) : null,
+						cost: generatedVariant.cost ? Number(generatedVariant.cost) : null,
+						position: generatedVariant.position,
+						isDefault: generatedVariant.position === 0,
+					},
 				});
 
-				if (
-					updateData.variantDefinitions &&
-					updateData.variantDefinitions.length > 0
-				) {
+				if (updateData.variantDefinitions && updateData.variantDefinitions.length > 0) {
 					for (const combo of generatedVariant.combination) {
 						const variantDef = updateData.variantDefinitions.find(
 							(vd) => vd.name === combo.variantName
@@ -1161,15 +935,15 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 									(ov) => ov.name === combo.optionName
 								);
 								if (optionValue) {
-									const optionValueId = optionValueIdMap.get(
-										optionValue.id || ""
-									);
+									const optionValueId = optionValueIdMap.get(optionValue.id || "");
 									if (optionValueId && optionId) {
-										await db.insert(productVariantOptions).values({
-											id: nanoid(),
-											variantId,
-											optionId,
-											optionValueId,
+										await db.productVariantOption.create({
+											data: {
+												id: nanoid(),
+												variantId,
+												optionId,
+												optionValueId,
+											},
 										});
 									}
 								}
@@ -1178,40 +952,32 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 					}
 				}
 
-				// Update or create inventory record if quantity is provided
-				if (
-					generatedVariant.quantity !== null &&
-					generatedVariant.quantity !== undefined
-				) {
+				// Update or create inventory
+				if (generatedVariant.quantity !== null && generatedVariant.quantity !== undefined) {
 					const quantityValue = parseInt(generatedVariant.quantity) || 0;
 
-					// Check if inventory record exists
-					const existingInventory = await db.query.inventory.findFirst({
-						where: (inv, { eq }) => eq(inv.variantId, variantId),
+					const existingInventory = await db.inventory.findUnique({
+						where: { variantId },
 					});
 
 					if (existingInventory) {
-						// Update existing inventory
-						await db
-							.update(inventory)
-							.set({
+						await db.inventory.update({
+							where: { variantId },
+							data: {
 								onHand: quantityValue,
-								available:
-									quantityValue -
-									existingInventory.reserved -
-									existingInventory.committed,
-								updatedAt: new Date(),
-							})
-							.where(eq(inventory.variantId, variantId));
+								available: quantityValue - existingInventory.reserved - existingInventory.committed,
+							},
+						});
 					} else {
-						// Create new inventory record
-						await db.insert(inventory).values({
-							id: nanoid(),
-							variantId,
-							onHand: quantityValue,
-							available: quantityValue,
-							reserved: 0,
-							committed: 0,
+						await db.inventory.create({
+							data: {
+								id: nanoid(),
+								variantId,
+								onHand: quantityValue,
+								available: quantityValue,
+								reserved: 0,
+								committed: 0,
+							},
 						});
 					}
 				}
@@ -1219,18 +985,67 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 		} else {
 			// Create default variant if no variants provided
 			const defaultVariantId = nanoid();
-			await db.insert(productVariants).values({
-				id: defaultVariantId,
-				productId,
-				sku: null,
-				price: null,
-				cost: null,
-				position: 0,
-				isDefault: true,
+			await db.productVariant.create({
+				data: {
+					id: defaultVariantId,
+					productId,
+					sku: null,
+					price: null,
+					cost: null,
+					position: 0,
+					isDefault: true,
+				},
 			});
 		}
 
-		// Fetch updated product
+		// Mark collections for regeneration based on changed fields
+		const changedFields: string[] = [];
+		const newPrice = Number(updateData.price);
+		const newCompareAtPrice = updateData.compareAtPrice && Number(updateData.compareAtPrice) > 0
+			? Number(updateData.compareAtPrice)
+			: null;
+
+		// Check price changes
+		if (oldValues.price !== undefined && Number(oldValues.price) !== newPrice) {
+			changedFields.push("price");
+		}
+
+		// Check compareAtPrice changes
+		const oldCompare = oldValues.compareAtPrice ? Number(oldValues.compareAtPrice) : null;
+		if (oldCompare !== newCompareAtPrice) {
+			changedFields.push("compareAtPrice");
+		}
+
+		// Check status changes
+		if (oldValues.status !== updateData.status) {
+			changedFields.push("status");
+		}
+
+		// Check category changes
+		if (oldValues.categoryId !== (updateData.categoryId || null)) {
+			changedFields.push("categoryId");
+		}
+
+		// Check vendor changes
+		if (oldValues.vendorId !== (updateData.vendorId || null)) {
+			changedFields.push("vendorId");
+		}
+
+		// Check tag changes (compare arrays)
+		const oldTagIds = new Set(oldValues.tagIds);
+		const newTagIds = new Set(updateData.tagIds || []);
+		const tagsChanged = oldTagIds.size !== newTagIds.size ||
+			[...oldTagIds].some(id => !newTagIds.has(id));
+		if (tagsChanged) {
+			changedFields.push("tags");
+		}
+
+		// Mark collections if any relevant fields changed
+		// Only mark if product is/was active (status change also triggers)
+		if (changedFields.length > 0 && (updateData.status === "active" || oldValues.status === "active")) {
+			await markCollectionsForRegeneration(changedFields, "product");
+		}
+
 		const updatedProduct = await getProductByIdServerFn({
 			data: { productId },
 		});
@@ -1241,84 +1056,41 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 export const getVariantByIdServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ variantId: z.string() }))
 	.handler(async ({ data }) => {
-		// Fetch variant with product
-		const [variantRow] = await db
-			.select({
-				variant: productVariants,
-				product: products,
-			})
-			.from(productVariants)
-			.leftJoin(products, eq(productVariants.productId, products.id))
-			.where(eq(productVariants.id, data.variantId))
-			.limit(1);
+		const variant = await db.productVariant.findUnique({
+			where: { id: data.variantId },
+			include: {
+				product: {
+					include: {
+						category: true,
+						vendor: true,
+					},
+				},
+				variantOptions: {
+					include: {
+						optionValue: {
+							include: { option: true },
+						},
+					},
+				},
+			},
+		});
 
-		if (!variantRow?.variant) {
+		if (!variant) {
 			throw new Error("Variant not found");
 		}
 
-		const variant = variantRow.variant;
-
-		// Fetch product category and vendor if product exists
-		let category = null;
-		let vendor = null;
-		if (variantRow.product) {
-			if (variantRow.product.categoryId) {
-				const [catRow] = await db
-					.select()
-					.from(productCategories)
-					.where(eq(productCategories.id, variantRow.product.categoryId))
-					.limit(1);
-				category = catRow || null;
-			}
-			if (variantRow.product.vendorId) {
-				const [vendRow] = await db
-					.select()
-					.from(vendors)
-					.where(eq(vendors.id, variantRow.product.vendorId))
-					.limit(1);
-				vendor = vendRow || null;
-			}
-		}
-
-		// Fetch variant options
-		const variantOptionsRows = await db
-			.select({
-				variantOption: productVariantOptions,
-				optionValue: productOptionValues,
-				option: productOptions,
-			})
-			.from(productVariantOptions)
-			.leftJoin(
-				productOptionValues,
-				eq(productVariantOptions.optionValueId, productOptionValues.id)
-			)
-			.leftJoin(
-				productOptions,
-				eq(productOptionValues.optionId, productOptions.id)
-			)
-			.where(eq(productVariantOptions.variantId, data.variantId));
-
-		const variantOptions = variantOptionsRows.map((row) => ({
-			...row.variantOption,
-			optionValue: row.optionValue
-				? {
-						...row.optionValue,
-						option: row.option || null,
-					}
-				: null,
-		}));
-
-		return {
+		return serializeData({
 			...variant,
-			product: variantRow.product
-				? {
-						...variantRow.product,
-						category,
-						vendor,
-					}
-				: null,
-			variantOptions,
-		};
+			variantOptions: variant.variantOptions.map((vo) => ({
+				...vo,
+				optionValue: vo.optionValue
+					? {
+							...vo.optionValue,
+							option: vo.optionValue.option || null,
+						}
+					: null,
+			})),
+		});
 	});
 
 // Update variant
@@ -1344,30 +1116,23 @@ export const updateVariantServerFn = createServerFn({ method: "POST" })
 		const updateFields: any = {};
 		if (updateData.sku !== undefined) updateFields.sku = updateData.sku;
 		if (updateData.price !== undefined)
-			updateFields.price = updateData.price
-				? String(updateData.price)
-				: null;
+			updateFields.price = updateData.price ? Number(updateData.price) : null;
 		if (updateData.compareAtPrice !== undefined)
 			updateFields.compareAtPrice = updateData.compareAtPrice
-				? String(updateData.compareAtPrice)
+				? Number(updateData.compareAtPrice)
 				: null;
 		if (updateData.cost !== undefined)
-			updateFields.cost = updateData.cost ? String(updateData.cost) : null;
+			updateFields.cost = updateData.cost ? Number(updateData.cost) : null;
 		if (updateData.weight !== undefined)
-			updateFields.weight = updateData.weight
-				? String(updateData.weight)
-				: null;
-		if (updateData.barcode !== undefined)
-			updateFields.barcode = updateData.barcode;
-		if (updateData.position !== undefined)
-			updateFields.position = updateData.position;
-		if (updateData.isDefault !== undefined)
-			updateFields.isDefault = updateData.isDefault;
+			updateFields.weight = updateData.weight ? Number(updateData.weight) : null;
+		if (updateData.barcode !== undefined) updateFields.barcode = updateData.barcode;
+		if (updateData.position !== undefined) updateFields.position = updateData.position;
+		if (updateData.isDefault !== undefined) updateFields.isDefault = updateData.isDefault;
 
-		await db
-			.update(productVariants)
-			.set(updateFields)
-			.where(eq(productVariants.id, variantId));
+		await db.productVariant.update({
+			where: { id: variantId },
+			data: updateFields,
+		});
 
 		const updatedVariant = await getVariantByIdServerFn({
 			data: { variantId },
@@ -1379,7 +1144,19 @@ export const updateVariantServerFn = createServerFn({ method: "POST" })
 export const deleteProductServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ id: z.string() }))
 	.handler(async ({ data }) => {
-		await db.delete(products).where(eq(products.id, data.id));
+		// Check if product was active before deleting
+		const product = await db.product.findUnique({
+			where: { id: data.id },
+			select: { status: true },
+		});
+
+		await db.product.delete({ where: { id: data.id } });
+
+		// Mark all rule-based collections for regeneration if product was active
+		if (product?.status === "active") {
+			await markAllRuleBasedCollectionsForRegeneration();
+		}
+
 		return {
 			success: true,
 			message: "Product deleted successfully",

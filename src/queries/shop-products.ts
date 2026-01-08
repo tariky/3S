@@ -1,20 +1,6 @@
-import { db } from "@/db/db";
+import { db, serializeData } from "@/db/db";
 import { queryOptions } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
-import {
-	products,
-	productMedia,
-	media,
-	productVariants,
-	productVariantOptions,
-	productOptionValues,
-	productOptions,
-	productCategories,
-	inventory,
-	productTags,
-	productTagsToProducts,
-} from "@/db/schema";
-import { eq, and, like, or, gte, lte, inArray, desc, asc } from "drizzle-orm";
 import { z } from "zod";
 
 export const SHOP_PRODUCTS_QUERY_KEY = "shop-products";
@@ -50,40 +36,39 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 		} = data;
 
 		// Build where conditions
-		const conditions = [eq(products.status, "active")];
+		const whereConditions: Record<string, unknown> = {
+			status: "active",
+		};
 
 		if (search) {
-			conditions.push(
-				or(
-					like(products.name, `%${search}%`),
-					like(products.sku, `%${search}%`)
-				)!
-			);
+			whereConditions.OR = [
+				{ name: { contains: search } },
+				{ sku: { contains: search } },
+			];
 		}
 
 		// Handle category filter by ID or slug
 		if (categoryId) {
-			conditions.push(eq(products.categoryId, categoryId));
+			whereConditions.categoryId = categoryId;
 		} else if (categorySlug) {
 			// Get category ID from slug
-			const [category] = await db
-				.select({ id: productCategories.id })
-				.from(productCategories)
-				.where(eq(productCategories.slug, categorySlug))
-				.limit(1);
-			
+			const category = await db.productCategory.findFirst({
+				where: { slug: categorySlug },
+				select: { id: true },
+			});
+
 			if (category) {
-				conditions.push(eq(products.categoryId, category.id));
+				whereConditions.categoryId = category.id;
 			} else {
 				// Category not found, return empty results
-				return {
+				return serializeData({
 					data: [],
 					total: 0,
 					page,
 					limit,
 					availableSizes: [],
 					availableColors: [],
-				};
+				});
 			}
 		}
 
@@ -91,123 +76,98 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 		let productIdsWithTags: string[] | null = null;
 		if (tags && tags.length > 0) {
 			// Get tag IDs from slugs
-			const tagRows = await db
-				.select({ id: productTags.id })
-				.from(productTags)
-				.where(inArray(productTags.slug, tags));
+			const tagRows = await db.productTag.findMany({
+				where: { slug: { in: tags } },
+				select: { id: true },
+			});
 
 			if (tagRows.length > 0) {
 				const tagIds = tagRows.map((t) => t.id);
-				
+
 				// Get product IDs that have these tags
-				const productTagRows = await db
-					.select({ productId: productTagsToProducts.productId })
-					.from(productTagsToProducts)
-					.where(inArray(productTagsToProducts.tagId, tagIds));
+				const productTagRows = await db.productTagsToProduct.findMany({
+					where: { tagId: { in: tagIds } },
+					select: { productId: true },
+				});
 
 				productIdsWithTags = productTagRows.map((pt) => pt.productId);
-				
+
 				if (productIdsWithTags.length === 0) {
 					// No products with these tags
-					return {
+					return serializeData({
 						data: [],
 						total: 0,
 						page,
 						limit,
 						availableSizes: [],
 						availableColors: [],
-					};
+					});
 				}
 			} else {
 				// Tags not found
-				return {
+				return serializeData({
 					data: [],
 					total: 0,
 					page,
 					limit,
 					availableSizes: [],
 					availableColors: [],
-				};
+				});
 			}
 		}
 
 		// Add tag filter to conditions if needed
 		if (productIdsWithTags) {
-			conditions.push(inArray(products.id, productIdsWithTags));
+			whereConditions.id = { in: productIdsWithTags };
 		}
 
 		// Get products (get all first, then filter and paginate)
-		const productsList = await db
-			.select({
-				product: products,
-				category: productCategories,
-			})
-			.from(products)
-			.leftJoin(
-				productCategories,
-				eq(products.categoryId, productCategories.id)
-			)
-			.where(and(...conditions))
-			.orderBy(desc(products.createdAt));
+		const productsList = await db.product.findMany({
+			where: whereConditions,
+			include: {
+				category: true,
+			},
+			orderBy: { createdAt: "desc" },
+		});
 
 		// Get primary images and variants for each product
 		const productsWithDetails = await Promise.all(
 			productsList.map(async (row) => {
 				// Get primary image
-				const primaryMediaRow = await db
-					.select({
-						media: media,
-					})
-					.from(productMedia)
-					.leftJoin(media, eq(productMedia.mediaId, media.id))
-					.where(
-						and(
-							eq(productMedia.productId, row.product.id),
-							eq(productMedia.isPrimary, true)
-						)
-					)
-					.limit(1);
+				const primaryMediaRow = await db.productMedia.findFirst({
+					where: {
+						productId: row.id,
+						isPrimary: true,
+					},
+					include: {
+						media: true,
+					},
+				});
 
 				// Get variants with options
-				const variants = await db
-					.select({
-						variant: productVariants,
-					})
-					.from(productVariants)
-					.where(eq(productVariants.productId, row.product.id))
-					.orderBy(productVariants.position);
+				const variants = await db.productVariant.findMany({
+					where: { productId: row.id },
+					orderBy: { position: "asc" },
+				});
 
 				// Get options and values for variants
 				const variantsWithOptions = await Promise.all(
 					variants.map(async (v) => {
-						const variantOptions = await db
-							.select({
-								option: productOptions,
-								optionValue: productOptionValues,
-							})
-							.from(productVariantOptions)
-							.leftJoin(
-								productOptions,
-								eq(productVariantOptions.optionId, productOptions.id)
-							)
-							.leftJoin(
-								productOptionValues,
-								eq(
-									productVariantOptions.optionValueId,
-									productOptionValues.id
-								)
-							)
-							.where(eq(productVariantOptions.variantId, v.variant.id));
+						const variantOptions = await db.productVariantOption.findMany({
+							where: { variantId: v.id },
+							include: {
+								option: true,
+								optionValue: true,
+							},
+						});
 
 						// Get inventory
-						const [inventoryData] = await db
-							.select()
-							.from(inventory)
-							.where(eq(inventory.variantId, v.variant.id))
-							.limit(1);
+						const inventoryData = await db.inventory.findFirst({
+							where: { variantId: v.id },
+						});
 
 						return {
-							...v.variant,
+							...v,
 							options: variantOptions.map((vo) => ({
 								optionName: vo.option?.name || "",
 								optionValue: vo.optionValue?.name || "",
@@ -218,7 +178,7 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 				);
 
 				// Filter by price range
-				const productPrice = parseFloat(row.product.price || "0");
+				const productPrice = parseFloat(row.price || "0");
 				if (minPrice !== undefined && productPrice < minPrice) {
 					return null;
 				}
@@ -253,14 +213,14 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 				}
 
 				// Filter by tags if provided (already filtered at DB level, but double-check)
-				if (productIdsWithTags && !productIdsWithTags.includes(row.product.id)) {
+				if (productIdsWithTags && !productIdsWithTags.includes(row.id)) {
 					return null;
 				}
 
 				return {
-					...row.product,
+					...row,
 					category: row.category,
-					primaryImage: primaryMediaRow[0]?.media?.url || null,
+					primaryImage: primaryMediaRow?.media?.url || null,
 					variants: variantsWithOptions,
 				};
 			})
@@ -304,14 +264,14 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 			page * limit
 		);
 
-		return {
+		return serializeData({
 			data: paginatedProducts,
 			total: filteredProducts.length,
 			page,
 			limit,
 			availableSizes: Array.from(availableSizes).sort(),
 			availableColors: Array.from(availableColors).sort(),
-		};
+		});
 	});
 
 export const getShopProductsQueryOptions = (opts?: {
@@ -338,12 +298,11 @@ export const getShopProductsQueryOptions = (opts?: {
 export const getShopCategoriesServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({}))
 	.handler(async () => {
-		const categories = await db
-			.select()
-			.from(productCategories)
-			.orderBy(productCategories.name);
+		const categories = await db.productCategory.findMany({
+			orderBy: { name: "asc" },
+		});
 
-		return categories;
+		return serializeData(categories);
 	});
 
 export const getShopCategoriesQueryOptions = () => {
@@ -360,96 +319,76 @@ export const getShopProductBySlugServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ slug: z.string() }))
 	.handler(async ({ data }) => {
 		// Fetch product with category and vendor
-		const [productRow] = await db
-			.select({
-				product: products,
-				category: productCategories,
-			})
-			.from(products)
-			.leftJoin(
-				productCategories,
-				eq(products.categoryId, productCategories.id)
-			)
-			.where(and(eq(products.slug, data.slug), eq(products.status, "active")))
-			.limit(1);
+		const productRow = await db.product.findFirst({
+			where: {
+				slug: data.slug,
+				status: "active",
+			},
+			include: {
+				category: true,
+			},
+		});
 
-		if (!productRow?.product) {
+		if (!productRow) {
 			throw new Error("Product not found");
 		}
 
-		const product = productRow.product;
+		const product = productRow;
 
 		// Fetch all media ordered by position
-		const mediaRows = await db
-			.select({
-				productMedia: productMedia,
-				media: media,
-			})
-			.from(productMedia)
-			.leftJoin(media, eq(productMedia.mediaId, media.id))
-			.where(eq(productMedia.productId, product.id))
-			.orderBy(asc(productMedia.position));
+		const mediaRows = await db.productMedia.findMany({
+			where: { productId: product.id },
+			include: {
+				media: true,
+			},
+			orderBy: { position: "asc" },
+		});
 
 		// Fetch options with values
-		const optionsRows = await db
-			.select({
-				option: productOptions,
-			})
-			.from(productOptions)
-			.where(eq(productOptions.productId, product.id))
-			.orderBy(asc(productOptions.position));
+		const optionsRows = await db.productOption.findMany({
+			where: { productId: product.id },
+			orderBy: { position: "asc" },
+		});
 
 		const options = await Promise.all(
 			optionsRows.map(async (optRow) => {
-				const values = await db
-					.select()
-					.from(productOptionValues)
-					.where(eq(productOptionValues.optionId, optRow.option.id))
-					.orderBy(asc(productOptionValues.position));
+				const values = await db.productOptionValue.findMany({
+					where: { optionId: optRow.id },
+					orderBy: { position: "asc" },
+				});
 
 				return {
-					...optRow.option,
+					...optRow,
 					values,
 				};
 			})
 		);
 
 		// Fetch variants with variant options and inventory
-		const variantsRows = await db
-			.select({
-				variant: productVariants,
-				inventory: inventory,
-			})
-			.from(productVariants)
-			.leftJoin(inventory, eq(productVariants.id, inventory.variantId))
-			.where(eq(productVariants.productId, product.id))
-			.orderBy(asc(productVariants.position));
+		const variantsRows = await db.productVariant.findMany({
+			where: { productId: product.id },
+			include: {
+				inventory: true,
+			},
+			orderBy: { position: "asc" },
+		});
 
 		const variants = await Promise.all(
 			variantsRows.map(async (row) => {
-				const variant = row.variant;
-				const variantOptionsRows = await db
-					.select({
-						variantOption: productVariantOptions,
-						optionValue: productOptionValues,
-						option: productOptions,
-					})
-					.from(productVariantOptions)
-					.leftJoin(
-						productOptionValues,
-						eq(
-							productVariantOptions.optionValueId,
-							productOptionValues.id
-						)
-					)
-					.leftJoin(
-						productOptions,
-						eq(productOptionValues.optionId, productOptions.id)
-					)
-					.where(eq(productVariantOptions.variantId, variant.id));
+				const variant = row;
+				const variantOptionsRows = await db.productVariantOption.findMany({
+					where: { variantId: variant.id },
+					include: {
+						optionValue: {
+							include: {
+								option: true,
+							},
+						},
+					},
+				});
 
 				const variantOptions = variantOptionsRows.map((voRow) => ({
-					optionName: voRow.option?.name || "",
+					optionName: voRow.optionValue?.option?.name || "",
 					optionValue: voRow.optionValue?.name || "",
 					optionValueId: voRow.optionValue?.id || "",
 				}));
@@ -465,7 +404,7 @@ export const getShopProductBySlugServerFn = createServerFn({ method: "POST" })
 		// Transform media
 		const mediaItems = mediaRows
 			.map((row) => ({
-				...row.productMedia,
+				...row,
 				media: row.media
 					? {
 							...row.media,
@@ -475,13 +414,13 @@ export const getShopProductBySlugServerFn = createServerFn({ method: "POST" })
 			}))
 			.filter((item) => item.media !== null);
 
-		return {
+		return serializeData({
 			...product,
 			category: productRow.category || null,
 			media: mediaItems,
 			options,
 			variants,
-		};
+		});
 	});
 
 export const getShopProductBySlugQueryOptions = (slug: string) => {
@@ -492,4 +431,3 @@ export const getShopProductBySlugQueryOptions = (slug: string) => {
 		},
 	});
 };
-

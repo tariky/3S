@@ -1,8 +1,6 @@
 import { db } from "@/db/db";
 import { mutationOptions, queryOptions } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
-import { definitions } from "@/db/schema";
-import { count, eq, like } from "drizzle-orm";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 
@@ -18,22 +16,22 @@ export const getDefinitionsServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { search = "", page = 1, limit = 25 } = data;
-    const response = await db.query.definitions.findMany({
-      where: (definitions, { like }) => {
-        if (search) {
-          return like(definitions.name, `%${search}%`);
-        }
-        return undefined;
-      },
-      limit: limit,
-      offset: (page - 1) * limit,
-      orderBy: (definitions, { asc }) => [asc(definitions.position)],
+
+    const response = await db.definition.findMany({
+      where: search
+        ? { name: { contains: search } }
+        : undefined,
+      take: limit,
+      skip: (page - 1) * limit,
+      orderBy: { position: "asc" },
     });
-    const totalQuery = db.select({ count: count() }).from(definitions);
-    const total = search
-      ? await totalQuery.where(like(definitions.name, `%${search}%`))
-      : await totalQuery;
-    const totalCount = total[0].count;
+
+    const totalCount = await db.definition.count({
+      where: search
+        ? { name: { contains: search } }
+        : undefined,
+    });
+
     const hasNextPage = page * limit < totalCount;
     const hasPreviousPage = page > 1;
     const nextCursor = page + 1;
@@ -59,18 +57,17 @@ export const createDefinitionServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const definitionId = nanoid();
-    await db.insert(definitions).values({
-      id: definitionId,
-      name: data.name,
-      type: data.type,
-      values: data.values,
-      position: data.position ?? 0,
+
+    const definition = await db.definition.create({
+      data: {
+        id: definitionId,
+        name: data.name,
+        type: data.type,
+        values: data.values,
+        position: data.position ?? 0,
+      },
     });
 
-    const [definition] = await db
-      .select()
-      .from(definitions)
-      .where(eq(definitions.id, definitionId));
     return definition;
   });
 
@@ -85,20 +82,16 @@ export const updateDefinitionServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    await db
-      .update(definitions)
-      .set({
+    const definition = await db.definition.update({
+      where: { id: data.id },
+      data: {
         name: data.name,
         type: data.type,
         values: data.values,
         position: data.position ?? 0,
-      })
-      .where(eq(definitions.id, data.id));
+      },
+    });
 
-    const [definition] = await db
-      .select()
-      .from(definitions)
-      .where(eq(definitions.id, data.id));
     return definition;
   });
 
@@ -109,7 +102,9 @@ export const deleteDefinitionServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    await db.delete(definitions).where(eq(definitions.id, data.id));
+    await db.definition.delete({
+      where: { id: data.id },
+    });
     return {
       success: true,
       message: "Definition deleted successfully",
@@ -139,4 +134,3 @@ export const getAllDefinitionsQueryOptions = (data: {
     },
   });
 };
-

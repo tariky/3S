@@ -1,8 +1,6 @@
-import { db } from "@/db/db";
+import { db, serializeData } from "@/db/db";
 import { mutationOptions, queryOptions } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
-import { shippingMethods } from "@/db/schema";
-import { count, eq, like, and, asc } from "drizzle-orm";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 
@@ -18,34 +16,34 @@ export const getShippingMethodsServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { search = "", page = 1, limit = 25 } = data;
-    const conditions = [];
-    if (search) {
-      conditions.push(like(shippingMethods.name, `%${search}%`));
-    }
-    const response = await db
-      .select()
-      .from(shippingMethods)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(asc(shippingMethods.position))
-      .limit(limit)
-      .offset((page - 1) * limit);
-    const totalQuery = db.select({ count: count() }).from(shippingMethods);
-    const total = search
-      ? await totalQuery.where(like(shippingMethods.name, `%${search}%`))
-      : await totalQuery;
-    const totalCount = total[0].count;
+
+    const whereCondition = search
+      ? { name: { contains: search } }
+      : undefined;
+
+    const response = await db.shippingMethod.findMany({
+      where: whereCondition,
+      orderBy: { position: "asc" },
+      take: limit,
+      skip: (page - 1) * limit,
+    });
+
+    const totalCount = await db.shippingMethod.count({
+      where: whereCondition,
+    });
+
     const hasNextPage = page * limit < totalCount;
     const hasPreviousPage = page > 1;
     const nextCursor = page + 1;
     const previousCursor = page - 1;
-    return {
+    return serializeData({
       data: response,
       total: totalCount,
       hasNextPage,
       hasPreviousPage,
       nextCursor,
       previousCursor,
-    };
+    });
   });
 
 export const createShippingMethodServerFn = createServerFn({ method: "POST" })
@@ -62,22 +60,21 @@ export const createShippingMethodServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const methodId = nanoid();
-    await db.insert(shippingMethods).values({
-      id: methodId,
-      name: data.name,
-      description: data.description || null,
-      price: data.price?.toString() || "0",
-      isFreeShipping: data.isFreeShipping ?? false,
-      minimumOrderAmount: data.minimumOrderAmount?.toString() || null,
-      active: data.active ?? true,
-      position: data.position ?? 0,
+
+    const method = await db.shippingMethod.create({
+      data: {
+        id: methodId,
+        name: data.name,
+        description: data.description || null,
+        price: data.price?.toString() || "0",
+        isFreeShipping: data.isFreeShipping ?? false,
+        minimumOrderAmount: data.minimumOrderAmount?.toString() || null,
+        active: data.active ?? true,
+        position: data.position ?? 0,
+      },
     });
 
-    const [method] = await db
-      .select()
-      .from(shippingMethods)
-      .where(eq(shippingMethods.id, methodId));
-    return method;
+    return serializeData(method);
   });
 
 export const updateShippingMethodServerFn = createServerFn({ method: "POST" })
@@ -94,9 +91,9 @@ export const updateShippingMethodServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    await db
-      .update(shippingMethods)
-      .set({
+    const method = await db.shippingMethod.update({
+      where: { id: data.id },
+      data: {
         name: data.name,
         description: data.description ?? null,
         price: data.price?.toString() || "0",
@@ -104,14 +101,10 @@ export const updateShippingMethodServerFn = createServerFn({ method: "POST" })
         minimumOrderAmount: data.minimumOrderAmount?.toString() || null,
         active: data.active ?? true,
         position: data.position ?? 0,
-      })
-      .where(eq(shippingMethods.id, data.id));
+      },
+    });
 
-    const [method] = await db
-      .select()
-      .from(shippingMethods)
-      .where(eq(shippingMethods.id, data.id));
-    return method;
+    return serializeData(method);
   });
 
 export const deleteShippingMethodServerFn = createServerFn({ method: "POST" })
@@ -121,9 +114,9 @@ export const deleteShippingMethodServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    await db
-      .delete(shippingMethods)
-      .where(eq(shippingMethods.id, data.id));
+    await db.shippingMethod.delete({
+      where: { id: data.id },
+    });
     return {
       success: true,
       message: "Shipping method deleted successfully",
@@ -160,12 +153,11 @@ export const getActiveShippingMethodsServerFn = createServerFn({
 })
   .inputValidator(z.object({}))
   .handler(async () => {
-    const methods = await db
-      .select()
-      .from(shippingMethods)
-      .where(eq(shippingMethods.active, true))
-      .orderBy(asc(shippingMethods.position));
-    return methods;
+    const methods = await db.shippingMethod.findMany({
+      where: { active: true },
+      orderBy: { position: "asc" },
+    });
+    return serializeData(methods);
   });
 
 export const getActiveShippingMethodsQueryOptions = () => {
@@ -176,4 +168,3 @@ export const getActiveShippingMethodsQueryOptions = () => {
     },
   });
 };
-

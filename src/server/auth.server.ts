@@ -3,9 +3,7 @@ import { auth } from "@/lib/auth";
 import { adminMiddleware, authMiddleware } from "@/utils/auth-middleware";
 import { loginSchema, signUpSchema } from "@/schemas/auth";
 import { db } from "@/db/db";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { user, customers } from "@/db/schema";
 import { nanoid } from "nanoid";
 
 export const signInEmailServerFn = createServerFn({ method: "POST" })
@@ -32,13 +30,11 @@ export const signInEmailServerFn = createServerFn({ method: "POST" })
 // Helper to create customer record from user
 async function createCustomerFromUser(userEmail: string, userName: string) {
   const normalizedEmail = userEmail.toLowerCase().trim();
-  
+
   // Check if customer already exists
-  const [existingCustomer] = await db
-    .select()
-    .from(customers)
-    .where(eq(customers.email, normalizedEmail))
-    .limit(1);
+  const existingCustomer = await db.customer.findUnique({
+    where: { email: normalizedEmail },
+  });
 
   if (existingCustomer) {
     return existingCustomer.id;
@@ -50,17 +46,19 @@ async function createCustomerFromUser(userEmail: string, userName: string) {
   const firstName = nameParts[0] || null;
   const lastName = nameParts.slice(1).join(" ") || null;
 
-  await db.insert(customers).values({
-    id: customerId,
-    email: normalizedEmail,
-    firstName,
-    lastName,
-    phone: null,
-    hasEmail: true,
-    acceptsMarketing: false,
-    totalSpent: "0",
-    ordersCount: 0,
-    status: "active",
+  await db.customer.create({
+    data: {
+      id: customerId,
+      email: normalizedEmail,
+      firstName,
+      lastName,
+      phone: null,
+      hasEmail: true,
+      acceptsMarketing: false,
+      totalSpent: 0,
+      ordersCount: 0,
+      status: "active",
+    },
   });
 
   return customerId;
@@ -149,8 +147,8 @@ export const getUserRoleServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const userResponse = await db.query.user.findFirst({
-      where: eq(user.id, data.userId),
+    const userResponse = await db.user.findUnique({
+      where: { id: data.userId },
     });
     return userResponse?.role;
   });
@@ -200,11 +198,9 @@ export const activateAccountServerFn = createServerFn({ method: "POST" })
     const normalizedEmail = data.email.toLowerCase().trim();
 
     // Check if user already exists
-    const [existingUser] = await db
-      .select()
-      .from(user)
-      .where(eq(user.email, normalizedEmail))
-      .limit(1);
+    const existingUser = await db.user.findUnique({
+      where: { email: normalizedEmail },
+    });
 
     if (existingUser) {
       // User already exists with an account, try to sign them in with the provided password
@@ -237,11 +233,9 @@ export const activateAccountServerFn = createServerFn({ method: "POST" })
     // User doesn't exist, create new account
     try {
       // Get customer info to use for user name
-      const [customer] = await db
-        .select()
-        .from(customers)
-        .where(eq(customers.email, normalizedEmail))
-        .limit(1);
+      const customer = await db.customer.findUnique({
+        where: { email: normalizedEmail },
+      });
 
       // Create user name from customer data or use email
       const userName = customer

@@ -1,8 +1,6 @@
 import { db } from "@/db/db";
 import { queryOptions } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
-import { pages } from "@/db/schema";
-import { eq, like, desc, and } from "drizzle-orm";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 
@@ -19,19 +17,19 @@ export const getAllPagesServerFn = createServerFn({ method: "POST" })
 	.handler(async ({ data }) => {
 		const { search, status } = data;
 
-		const conditions = [];
+		const whereConditions: Record<string, unknown> = {};
+
 		if (search) {
-			conditions.push(like(pages.title, `%${search}%`));
+			whereConditions.title = { contains: search };
 		}
 		if (status) {
-			conditions.push(eq(pages.status, status));
+			whereConditions.status = status;
 		}
 
-		const allPages = await db
-			.select()
-			.from(pages)
-			.where(conditions.length > 0 ? and(...conditions) : undefined)
-			.orderBy(desc(pages.createdAt));
+		const allPages = await db.page.findMany({
+			where: Object.keys(whereConditions).length > 0 ? whereConditions : undefined,
+			orderBy: { createdAt: "desc" },
+		});
 
 		return allPages;
 	});
@@ -56,11 +54,9 @@ export const getPageByIdServerFn = createServerFn({ method: "POST" })
 		})
 	)
 	.handler(async ({ data }) => {
-		const [page] = await db
-			.select()
-			.from(pages)
-			.where(eq(pages.id, data.id))
-			.limit(1);
+		const page = await db.page.findUnique({
+			where: { id: data.id },
+		});
 
 		if (!page) {
 			throw new Error("Page not found");
@@ -86,11 +82,9 @@ export const getPageBySlugServerFn = createServerFn({ method: "POST" })
 		})
 	)
 	.handler(async ({ data }) => {
-		const [page] = await db
-			.select()
-			.from(pages)
-			.where(eq(pages.slug, data.slug))
-			.limit(1);
+		const page = await db.page.findFirst({
+			where: { slug: data.slug },
+		});
 
 		return page || null;
 	});
@@ -122,11 +116,10 @@ export const createPageServerFn = createServerFn({ method: "POST" })
 		let counter = 1;
 
 		while (true) {
-			const [existing] = await db
-				.select({ id: pages.id })
-				.from(pages)
-				.where(eq(pages.slug, slug))
-				.limit(1);
+			const existing = await db.page.findFirst({
+				where: { slug },
+				select: { id: true },
+			});
 
 			if (!existing) {
 				break;
@@ -141,16 +134,18 @@ export const createPageServerFn = createServerFn({ method: "POST" })
 			}
 		}
 
-		await db.insert(pages).values({
-			id: pageId,
-			title: data.title,
-			slug,
-			content: data.content,
-			excerpt: data.excerpt || null,
-			status: data.status || "draft",
-			template: data.template || null,
-			seoTitle: data.seoTitle || null,
-			seoDescription: data.seoDescription || null,
+		await db.page.create({
+			data: {
+				id: pageId,
+				title: data.title,
+				slug,
+				content: data.content,
+				excerpt: data.excerpt || null,
+				status: data.status || "draft",
+				template: data.template || null,
+				seoTitle: data.seoTitle || null,
+				seoDescription: data.seoDescription || null,
+			},
 		});
 
 		return { id: pageId };
@@ -185,11 +180,10 @@ export const updatePageServerFn = createServerFn({ method: "POST" })
 			let counter = 1;
 
 			while (true) {
-				const [existing] = await db
-					.select({ id: pages.id })
-					.from(pages)
-					.where(eq(pages.slug, slug))
-					.limit(1);
+				const existing = await db.page.findFirst({
+					where: { slug },
+					select: { id: true },
+				});
 
 				if (!existing || existing.id === id) {
 					break;
@@ -207,7 +201,10 @@ export const updatePageServerFn = createServerFn({ method: "POST" })
 			updateData.slug = slug;
 		}
 
-		await db.update(pages).set(updateData).where(eq(pages.id, id));
+		await db.page.update({
+			where: { id },
+			data: updateData,
+		});
 
 		return { success: true };
 	});
@@ -220,8 +217,9 @@ export const deletePageServerFn = createServerFn({ method: "POST" })
 		})
 	)
 	.handler(async ({ data }) => {
-		await db.delete(pages).where(eq(pages.id, data.id));
+		await db.page.delete({
+			where: { id: data.id },
+		});
 
 		return { success: true };
 	});
-

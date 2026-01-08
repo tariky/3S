@@ -1,21 +1,10 @@
-import { db } from "@/db/db";
+import { db, serializeData } from "@/db/db";
 import { mutationOptions, queryOptions } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
-import {
-  orders,
-  orderItems,
-  addresses,
-  customers,
-  productMedia,
-  productVariantMedia,
-  media,
-  inventory,
-  inventoryTracking,
-} from "@/db/schema";
-import { eq, and, like, count, desc, or, asc } from "drizzle-orm";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { authMiddleware } from "@/utils/auth-middleware";
+import { markCollectionsForRegeneration } from "@/queries/collections";
 
 export const ORDERS_QUERY_KEY = "orders";
 
@@ -36,11 +25,9 @@ async function getOrCreateCustomerByEmail(
   const normalizedEmail = email.toLowerCase().trim();
 
   // Check if customer already exists
-  const [existingCustomer] = await db
-    .select()
-    .from(customers)
-    .where(eq(customers.email, normalizedEmail))
-    .limit(1);
+  const existingCustomer = await db.customer.findFirst({
+    where: { email: normalizedEmail },
+  });
 
   if (existingCustomer) {
     // Update customer info if we have new data
@@ -65,10 +52,10 @@ async function getOrCreateCustomerByEmail(
 
     // Only update if we have new data
     if (Object.keys(updates).length > 1) {
-      await db
-        .update(customers)
-        .set(updates)
-        .where(eq(customers.id, existingCustomer.id));
+      await db.customer.update({
+        where: { id: existingCustomer.id },
+        data: updates,
+      });
     }
 
     return existingCustomer.id;
@@ -76,17 +63,19 @@ async function getOrCreateCustomerByEmail(
 
   // Create new customer
   const customerId = nanoid();
-  await db.insert(customers).values({
-    id: customerId,
-    email: normalizedEmail,
-    firstName: shippingAddress?.firstName || null,
-    lastName: shippingAddress?.lastName || null,
-    phone: shippingAddress?.phone || null,
-    hasEmail: true,
-    acceptsMarketing: false,
-    totalSpent: "0",
-    ordersCount: 0,
-    status: "active",
+  await db.customer.create({
+    data: {
+      id: customerId,
+      email: normalizedEmail,
+      firstName: shippingAddress?.firstName || null,
+      lastName: shippingAddress?.lastName || null,
+      phone: shippingAddress?.phone || null,
+      hasEmail: true,
+      acceptsMarketing: false,
+      totalSpent: "0",
+      ordersCount: 0,
+      status: "active",
+    },
   });
 
   return customerId;
@@ -150,7 +139,7 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const orderId = nanoid();
-    
+
     // Generate order number (simple incrementing number for now)
     const orderNumber = `ORD-${Date.now()}`;
 
@@ -164,46 +153,46 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
     }
 
     // Create order
-    await db.insert(orders).values({
-      id: orderId,
-      orderNumber,
-      customerId: finalCustomerId,
-      email: data.email || null,
-      status: "pending",
-      financialStatus: "pending",
-      fulfillmentStatus: "unfulfilled",
-      subtotal: data.subtotal.toString(),
-      tax: (data.tax || 0).toString(),
-      shipping: (data.shipping || 0).toString(),
-      discount: (data.discount || 0).toString(),
-      total: data.total.toString(),
-      note: data.note || null,
+    await db.order.create({
+      data: {
+        id: orderId,
+        orderNumber,
+        customerId: finalCustomerId,
+        email: data.email || null,
+        status: "pending",
+        financialStatus: "pending",
+        fulfillmentStatus: "unfulfilled",
+        subtotal: data.subtotal.toString(),
+        tax: (data.tax || 0).toString(),
+        shipping: (data.shipping || 0).toString(),
+        discount: (data.discount || 0).toString(),
+        total: data.total.toString(),
+        note: data.note || null,
+      },
     });
 
     // Update customer stats (ordersCount and totalSpent) when order is created
     if (finalCustomerId) {
       const orderTotal = data.total;
-      
+
       // Get current customer data
-      const [currentCustomer] = await db
-        .select()
-        .from(customers)
-        .where(eq(customers.id, finalCustomerId))
-        .limit(1);
+      const currentCustomer = await db.customer.findFirst({
+        where: { id: finalCustomerId },
+      });
 
       if (currentCustomer) {
         const currentOrdersCount = currentCustomer.ordersCount || 0;
         const currentTotalSpent = parseFloat(currentCustomer.totalSpent || "0");
-        
+
         // Increment orders count and add to total spent
-        await db
-          .update(customers)
-          .set({
+        await db.customer.update({
+          where: { id: finalCustomerId },
+          data: {
             ordersCount: currentOrdersCount + 1,
             totalSpent: (currentTotalSpent + orderTotal).toFixed(2),
             updatedAt: new Date(),
-          })
-          .where(eq(customers.id, finalCustomerId));
+          },
+        });
       }
     }
 
@@ -221,17 +210,15 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
         total: (item.price * item.quantity).toString(),
         variantTitle: item.variantTitle || null,
       }));
-      await db.insert(orderItems).values(itemsToInsert);
+      await db.orderItem.createMany({ data: itemsToInsert });
 
       // Reserve inventory for items with variants
       for (const item of data.items) {
         if (item.variantId) {
           // Get current inventory
-          const [currentInventory] = await db
-            .select()
-            .from(inventory)
-            .where(eq(inventory.variantId, item.variantId))
-            .limit(1);
+          const currentInventory = await db.inventory.findFirst({
+            where: { variantId: item.variantId },
+          });
 
           if (currentInventory) {
             // Check if we have enough available inventory
@@ -248,85 +235,93 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
             const newAvailable = currentInventory.onHand - newReserved - newCommitted;
 
             // Update inventory
-            await db
-              .update(inventory)
-              .set({
+            await db.inventory.update({
+              where: { variantId: item.variantId },
+              data: {
                 reserved: newReserved,
                 committed: newCommitted,
                 available: newAvailable,
                 updatedAt: new Date(),
-              })
-              .where(eq(inventory.variantId, item.variantId));
+              },
+            });
 
             // Create inventory tracking record
-            await db.insert(inventoryTracking).values({
-              id: nanoid(),
-              variantId: item.variantId,
-              productId: item.productId || "",
-              type: "reservation",
-              quantity: item.quantity, // Positive because we're reserving
-              previousAvailable: currentInventory.available,
-              previousReserved: currentInventory.reserved,
-              newAvailable: newAvailable,
-              newReserved: newReserved,
-              reason: `Order created: ${orderNumber}`,
-              referenceType: "order",
-              referenceId: orderId,
-              userId: null, // You can add user tracking later
+            await db.inventoryTracking.create({
+              data: {
+                id: nanoid(),
+                variantId: item.variantId,
+                productId: item.productId || "",
+                type: "reservation",
+                quantity: item.quantity, // Positive because we're reserving
+                previousAvailable: currentInventory.available,
+                previousReserved: currentInventory.reserved,
+                newAvailable: newAvailable,
+                newReserved: newReserved,
+                reason: `Order created: ${orderNumber}`,
+                referenceType: "order",
+                referenceId: orderId,
+                userId: null, // You can add user tracking later
+              },
             });
           }
         }
       }
+
+      // Mark collections with inventory rules for regeneration
+      await markCollectionsForRegeneration(["inventory"], "product");
     }
 
     // Create addresses if provided
     if (data.billingAddress) {
-      await db.insert(addresses).values({
-        id: nanoid(),
-        orderId,
-        customerId: data.customerId || null,
-        type: "billing",
-        firstName: data.billingAddress.firstName || null,
-        lastName: data.billingAddress.lastName || null,
-        company: data.billingAddress.company || null,
-        address1: data.billingAddress.address1,
-        address2: data.billingAddress.address2 || null,
-        city: data.billingAddress.city,
-        state: data.billingAddress.state || null,
-        zip: data.billingAddress.zip || null,
-        country: data.billingAddress.country,
-        phone: data.billingAddress.phone || null,
-        isDefault: false,
+      await db.address.create({
+        data: {
+          id: nanoid(),
+          orderId,
+          customerId: data.customerId || null,
+          type: "billing",
+          firstName: data.billingAddress.firstName || null,
+          lastName: data.billingAddress.lastName || null,
+          company: data.billingAddress.company || null,
+          address1: data.billingAddress.address1,
+          address2: data.billingAddress.address2 || null,
+          city: data.billingAddress.city,
+          state: data.billingAddress.state || null,
+          zip: data.billingAddress.zip || null,
+          country: data.billingAddress.country,
+          phone: data.billingAddress.phone || null,
+          isDefault: false,
+        },
       });
     }
 
     if (data.shippingAddress) {
-      await db.insert(addresses).values({
-        id: nanoid(),
-        orderId,
-        customerId: data.customerId || null,
-        type: "shipping",
-        firstName: data.shippingAddress.firstName || null,
-        lastName: data.shippingAddress.lastName || null,
-        company: data.shippingAddress.company || null,
-        address1: data.shippingAddress.address1,
-        address2: data.shippingAddress.address2 || null,
-        city: data.shippingAddress.city,
-        state: data.shippingAddress.state || null,
-        zip: data.shippingAddress.zip || null,
-        country: data.shippingAddress.country,
-        phone: data.shippingAddress.phone || null,
-        isDefault: false,
+      await db.address.create({
+        data: {
+          id: nanoid(),
+          orderId,
+          customerId: data.customerId || null,
+          type: "shipping",
+          firstName: data.shippingAddress.firstName || null,
+          lastName: data.shippingAddress.lastName || null,
+          company: data.shippingAddress.company || null,
+          address1: data.shippingAddress.address1,
+          address2: data.shippingAddress.address2 || null,
+          city: data.shippingAddress.city,
+          state: data.shippingAddress.state || null,
+          zip: data.shippingAddress.zip || null,
+          country: data.shippingAddress.country,
+          phone: data.shippingAddress.phone || null,
+          isDefault: false,
+        },
       });
     }
 
     // Fetch and return the created order
-    const [order] = await db
-      .select()
-      .from(orders)
-      .where(eq(orders.id, orderId));
-    
-    return order;
+    const order = await db.order.findUnique({
+      where: { id: orderId },
+    });
+
+    return serializeData(order);
   });
 
 export const createOrderMutationOptions = (data: Parameters<typeof createOrderServerFn>[0]["data"]) => {
@@ -351,83 +346,63 @@ export const getOrdersServerFn = createServerFn({ method: "POST" })
     const { search = "", status, page = 1, limit = 25 } = data;
 
     // Build where conditions
-    const conditions = [];
+    const whereConditions: {
+      OR?: Array<{
+        orderNumber?: { contains: string };
+        email?: { contains: string };
+        customer?: { firstName?: { contains: string }; lastName?: { contains: string } };
+      }>;
+      status?: string;
+    } = {};
+
     if (search) {
       // Search in order number, email, and customer name/lastname
-      conditions.push(
-        or(
-          like(orders.orderNumber, `%${search}%`),
-          like(orders.email, `%${search}%`),
-          like(customers.firstName, `%${search}%`),
-          like(customers.lastName, `%${search}%`)
-        )!
-      );
+      whereConditions.OR = [
+        { orderNumber: { contains: search } },
+        { email: { contains: search } },
+        { customer: { firstName: { contains: search } } },
+        { customer: { lastName: { contains: search } } },
+      ];
     }
     if (status) {
-      conditions.push(eq(orders.status, status));
+      whereConditions.status = status;
     }
 
     // Fetch orders with customer
-    const ordersQuery = db
-      .select({
-        order: orders,
-        customer: customers,
-      })
-      .from(orders)
-      .leftJoin(customers, eq(orders.customerId, customers.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(orders.createdAt))
-      .limit(limit)
-      .offset((page - 1) * limit);
-
-    const response = await ordersQuery;
+    const response = await db.order.findMany({
+      where: Object.keys(whereConditions).length > 0 ? whereConditions : undefined,
+      include: {
+        customer: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: (page - 1) * limit,
+    });
 
     // Transform the response to match expected format
     const transformedResponse = response.map((row) => ({
-      ...row.order,
+      ...row,
       customer: row.customer || null,
     }));
 
-    // Build total count query with same conditions
-    const totalConditions = [];
-    if (search) {
-      // Need to join with customers for search in name/lastname
-      totalConditions.push(
-        or(
-          like(orders.orderNumber, `%${search}%`),
-          like(orders.email, `%${search}%`),
-          like(customers.firstName, `%${search}%`),
-          like(customers.lastName, `%${search}%`)
-        )!
-      );
-    }
-    if (status) {
-      totalConditions.push(eq(orders.status, status));
-    }
+    // Get total count with same conditions
+    const totalCount = await db.order.count({
+      where: Object.keys(whereConditions).length > 0 ? whereConditions : undefined,
+    });
 
-    const totalQuery = db
-      .select({ count: count() })
-      .from(orders)
-      .leftJoin(customers, eq(orders.customerId, customers.id))
-      .where(
-        totalConditions.length > 0 ? and(...totalConditions) : undefined
-      );
-
-    const total = await totalQuery;
-    const totalCount = total[0].count;
     const hasNextPage = page * limit < totalCount;
     const hasPreviousPage = page > 1;
     const nextCursor = page + 1;
     const previousCursor = page - 1;
 
-    return {
+    return serializeData({
       data: transformedResponse,
       total: totalCount,
       hasNextPage,
       hasPreviousPage,
       nextCursor,
       previousCursor,
-    };
+    });
   });
 
 export const getAllOrdersQueryOptions = (opts: {
@@ -449,80 +424,62 @@ export const getOrderByIdServerFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ orderId: z.string() }))
   .handler(async ({ data }) => {
     // Fetch order with customer
-    const [orderRow] = await db
-      .select({
-        order: orders,
-        customer: customers,
-      })
-      .from(orders)
-      .leftJoin(customers, eq(orders.customerId, customers.id))
-      .where(eq(orders.id, data.orderId))
-      .limit(1);
+    const orderRow = await db.order.findUnique({
+      where: { id: data.orderId },
+      include: {
+        customer: true,
+      },
+    });
 
-    if (!orderRow?.order) {
+    if (!orderRow) {
       throw new Error("Order not found");
     }
 
-    const order = orderRow.order;
-
-    // Fetch order items with product images
-    const itemsRows = await db
-      .select()
-      .from(orderItems)
-      .where(eq(orderItems.orderId, data.orderId))
-      .orderBy(asc(orderItems.createdAt));
+    // Fetch order items
+    const itemsRows = await db.orderItem.findMany({
+      where: { orderId: data.orderId },
+      orderBy: { createdAt: "asc" },
+    });
 
     // Fetch images and inventory for each item
     const items = await Promise.all(
       itemsRows.map(async (item) => {
         let imageUrl: string | null = null;
-        let inventoryData: typeof inventory.$inferSelect | null = null;
+        let inventoryData: Awaited<ReturnType<typeof db.inventory.findFirst>> | null = null;
 
         // Try to get variant image first, then product image
         if (item.variantId) {
-          const variantMediaRow = await db
-            .select({
-              media: media,
-            })
-            .from(productVariantMedia)
-            .leftJoin(media, eq(productVariantMedia.mediaId, media.id))
-            .where(
-              and(
-                eq(productVariantMedia.variantId, item.variantId),
-                eq(productVariantMedia.isPrimary, true)
-              )
-            )
-            .limit(1);
+          const variantMediaRow = await db.productVariantMedia.findFirst({
+            where: {
+              variantId: item.variantId,
+              isPrimary: true,
+            },
+            include: {
+              media: true,
+            },
+          });
 
-          imageUrl = variantMediaRow[0]?.media?.url || null;
+          imageUrl = variantMediaRow?.media?.url || null;
 
           // Fetch inventory for variant
-          const [inventoryRow] = await db
-            .select()
-            .from(inventory)
-            .where(eq(inventory.variantId, item.variantId))
-            .limit(1);
-
-          inventoryData = inventoryRow || null;
+          inventoryData = await db.inventory.findFirst({
+            where: { variantId: item.variantId },
+          });
         }
 
         // Fallback to product image if variant image not found
         if (!imageUrl && item.productId) {
-          const productMediaRow = await db
-            .select({
-              media: media,
-            })
-            .from(productMedia)
-            .leftJoin(media, eq(productMedia.mediaId, media.id))
-            .where(
-              and(
-                eq(productMedia.productId, item.productId),
-                eq(productMedia.isPrimary, true)
-              )
-            )
-            .limit(1);
+          const productMediaRow = await db.productMedia.findFirst({
+            where: {
+              productId: item.productId,
+              isPrimary: true,
+            },
+            include: {
+              media: true,
+            },
+          });
 
-          imageUrl = productMediaRow[0]?.media?.url || null;
+          imageUrl = productMediaRow?.media?.url || null;
         }
 
         return {
@@ -534,21 +491,20 @@ export const getOrderByIdServerFn = createServerFn({ method: "POST" })
     );
 
     // Fetch addresses
-    const orderAddresses = await db
-      .select()
-      .from(addresses)
-      .where(eq(addresses.orderId, data.orderId));
+    const orderAddresses = await db.address.findMany({
+      where: { orderId: data.orderId },
+    });
 
     const billingAddress = orderAddresses.find((a) => a.type === "billing") || null;
     const shippingAddress = orderAddresses.find((a) => a.type === "shipping") || null;
 
-    return {
-      ...order,
+    return serializeData({
+      ...orderRow,
       customer: orderRow.customer || null,
       items,
       billingAddress,
       shippingAddress,
-    };
+    });
   });
 
 export const getOrderByIdQueryOptions = (orderId: string) => {
@@ -587,10 +543,9 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     // Get existing order items to calculate inventory changes
-    const existingItems = await db
-      .select()
-      .from(orderItems)
-      .where(eq(orderItems.orderId, data.orderId));
+    const existingItems = await db.orderItem.findMany({
+      where: { orderId: data.orderId },
+    });
 
     // Create maps for comparison
     const existingItemsMap = new Map(
@@ -614,11 +569,9 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
       if (existingItem.variantId) {
         if (!newItem) {
           // Item was removed - release all reserved inventory
-          const [currentInventory] = await db
-            .select()
-            .from(inventory)
-            .where(eq(inventory.variantId, existingItem.variantId))
-            .limit(1);
+          const currentInventory = await db.inventory.findFirst({
+            where: { variantId: existingItem.variantId },
+          });
 
           if (currentInventory) {
             const newReserved = Math.max(
@@ -632,40 +585,40 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
             const newAvailable =
               currentInventory.onHand - newReserved - newCommitted;
 
-            await db
-              .update(inventory)
-              .set({
+            await db.inventory.update({
+              where: { variantId: existingItem.variantId },
+              data: {
                 reserved: newReserved,
                 committed: newCommitted,
                 available: newAvailable,
                 updatedAt: new Date(),
-              })
-              .where(eq(inventory.variantId, existingItem.variantId));
+              },
+            });
 
-            await db.insert(inventoryTracking).values({
-              id: nanoid(),
-              variantId: existingItem.variantId,
-              productId: existingItem.productId || "",
-              type: "cancellation",
-              quantity: -existingItem.quantity,
-              previousAvailable: currentInventory.available,
-              previousReserved: currentInventory.reserved,
-              newAvailable: newAvailable,
-              newReserved: newReserved,
-              reason: `Order item removed: Order ${data.orderId}`,
-              referenceType: "order",
-              referenceId: data.orderId,
-              userId: null,
+            await db.inventoryTracking.create({
+              data: {
+                id: nanoid(),
+                variantId: existingItem.variantId,
+                productId: existingItem.productId || "",
+                type: "cancellation",
+                quantity: -existingItem.quantity,
+                previousAvailable: currentInventory.available,
+                previousReserved: currentInventory.reserved,
+                newAvailable: newAvailable,
+                newReserved: newReserved,
+                reason: `Order item removed: Order ${data.orderId}`,
+                referenceType: "order",
+                referenceId: data.orderId,
+                userId: null,
+              },
             });
           }
         } else if (newItem.quantity !== existingItem.quantity) {
           // Quantity changed - adjust reserved inventory
           const quantityDiff = newItem.quantity - existingItem.quantity;
-          const [currentInventory] = await db
-            .select()
-            .from(inventory)
-            .where(eq(inventory.variantId, existingItem.variantId))
-            .limit(1);
+          const currentInventory = await db.inventory.findFirst({
+            where: { variantId: existingItem.variantId },
+          });
 
           if (currentInventory) {
             if (quantityDiff > 0) {
@@ -692,30 +645,32 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
             const newAvailable =
               currentInventory.onHand - newReserved - newCommitted;
 
-            await db
-              .update(inventory)
-              .set({
+            await db.inventory.update({
+              where: { variantId: existingItem.variantId },
+              data: {
                 reserved: newReserved,
                 committed: newCommitted,
                 available: newAvailable,
                 updatedAt: new Date(),
-              })
-              .where(eq(inventory.variantId, existingItem.variantId));
+              },
+            });
 
-            await db.insert(inventoryTracking).values({
-              id: nanoid(),
-              variantId: existingItem.variantId,
-              productId: existingItem.productId || "",
-              type: quantityDiff > 0 ? "reservation" : "cancellation",
-              quantity: quantityDiff,
-              previousAvailable: currentInventory.available,
-              previousReserved: currentInventory.reserved,
-              newAvailable: newAvailable,
-              newReserved: newReserved,
-              reason: `Order item quantity changed: Order ${data.orderId}`,
-              referenceType: "order",
-              referenceId: data.orderId,
-              userId: null,
+            await db.inventoryTracking.create({
+              data: {
+                id: nanoid(),
+                variantId: existingItem.variantId,
+                productId: existingItem.productId || "",
+                type: quantityDiff > 0 ? "reservation" : "cancellation",
+                quantity: quantityDiff,
+                previousAvailable: currentInventory.available,
+                previousReserved: currentInventory.reserved,
+                newAvailable: newAvailable,
+                newReserved: newReserved,
+                reason: `Order item quantity changed: Order ${data.orderId}`,
+                referenceType: "order",
+                referenceId: data.orderId,
+                userId: null,
+              },
             });
           }
         }
@@ -730,11 +685,9 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
 
         if (!existingItem) {
           // New item - reserve inventory
-          const [currentInventory] = await db
-            .select()
-            .from(inventory)
-            .where(eq(inventory.variantId, newItem.variantId))
-            .limit(1);
+          const currentInventory = await db.inventory.findFirst({
+            where: { variantId: newItem.variantId },
+          });
 
           if (currentInventory) {
             const available =
@@ -752,30 +705,32 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
             const newAvailable =
               currentInventory.onHand - newReserved - newCommitted;
 
-            await db
-              .update(inventory)
-              .set({
+            await db.inventory.update({
+              where: { variantId: newItem.variantId },
+              data: {
                 reserved: newReserved,
                 committed: newCommitted,
                 available: newAvailable,
                 updatedAt: new Date(),
-              })
-              .where(eq(inventory.variantId, newItem.variantId));
+              },
+            });
 
-            await db.insert(inventoryTracking).values({
-              id: nanoid(),
-              variantId: newItem.variantId,
-              productId: newItem.productId || "",
-              type: "reservation",
-              quantity: newItem.quantity,
-              previousAvailable: currentInventory.available,
-              previousReserved: currentInventory.reserved,
-              newAvailable: newAvailable,
-              newReserved: newReserved,
-              reason: `Order item added: Order ${data.orderId}`,
-              referenceType: "order",
-              referenceId: data.orderId,
-              userId: null,
+            await db.inventoryTracking.create({
+              data: {
+                id: nanoid(),
+                variantId: newItem.variantId,
+                productId: newItem.productId || "",
+                type: "reservation",
+                quantity: newItem.quantity,
+                previousAvailable: currentInventory.available,
+                previousReserved: currentInventory.reserved,
+                newAvailable: newAvailable,
+                newReserved: newReserved,
+                reason: `Order item added: Order ${data.orderId}`,
+                referenceType: "order",
+                referenceId: data.orderId,
+                userId: null,
+              },
             });
           }
         }
@@ -784,7 +739,9 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
     }
 
     // Delete all existing items
-    await db.delete(orderItems).where(eq(orderItems.orderId, data.orderId));
+    await db.orderItem.deleteMany({
+      where: { orderId: data.orderId },
+    });
 
     // Insert new items
     if (data.items.length > 0) {
@@ -800,13 +757,13 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
         total: (item.price * item.quantity).toString(),
         variantTitle: item.variantTitle || null,
       }));
-      await db.insert(orderItems).values(itemsToInsert);
+      await db.orderItem.createMany({ data: itemsToInsert });
     }
 
     // Update order totals
-    await db
-      .update(orders)
-      .set({
+    await db.order.update({
+      where: { id: data.orderId },
+      data: {
         subtotal: data.subtotal.toString(),
         tax: (data.tax || 0).toString(),
         shipping: (data.shipping || 0).toString(),
@@ -814,11 +771,14 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
         total: data.total.toString(),
         note: data.note || null,
         updatedAt: new Date(),
-      })
-      .where(eq(orders.id, data.orderId));
+      },
+    });
+
+    // Mark collections with inventory rules for regeneration
+    await markCollectionsForRegeneration(["inventory"], "product");
 
     // Fetch and return updated order
-    return await getOrderByIdServerFn({ data: { orderId: data.orderId } });
+    return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));
   });
 
 // Cancel order
@@ -840,11 +800,9 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
       for (const item of orderData.items) {
         if (item.variantId) {
           // Get current inventory
-          const [currentInventory] = await db
-            .select()
-            .from(inventory)
-            .where(eq(inventory.variantId, item.variantId))
-            .limit(1);
+          const currentInventory = await db.inventory.findFirst({
+            where: { variantId: item.variantId },
+          });
 
           if (currentInventory) {
             // Calculate new values - release reserved and committed
@@ -853,78 +811,81 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
             const newAvailable = currentInventory.onHand - newReserved - newCommitted;
 
             // Update inventory
-            await db
-              .update(inventory)
-              .set({
+            await db.inventory.update({
+              where: { variantId: item.variantId },
+              data: {
                 reserved: newReserved,
                 committed: newCommitted,
                 available: newAvailable,
                 updatedAt: new Date(),
-              })
-              .where(eq(inventory.variantId, item.variantId));
+              },
+            });
 
             // Create inventory tracking record
-            await db.insert(inventoryTracking).values({
-              id: nanoid(),
-              variantId: item.variantId,
-              productId: item.productId || "",
-              type: "cancellation",
-              quantity: -item.quantity, // Negative because we're releasing
-              previousAvailable: currentInventory.available,
-              previousReserved: currentInventory.reserved,
-              newAvailable: newAvailable,
-              newReserved: newReserved,
-              reason: `Order cancelled: ${orderData.orderNumber}`,
-              referenceType: "order",
-              referenceId: data.orderId,
-              userId: null,
+            await db.inventoryTracking.create({
+              data: {
+                id: nanoid(),
+                variantId: item.variantId,
+                productId: item.productId || "",
+                type: "cancellation",
+                quantity: -item.quantity, // Negative because we're releasing
+                previousAvailable: currentInventory.available,
+                previousReserved: currentInventory.reserved,
+                newAvailable: newAvailable,
+                newReserved: newReserved,
+                reason: `Order cancelled: ${orderData.orderNumber}`,
+                referenceType: "order",
+                referenceId: data.orderId,
+                userId: null,
+              },
             });
           }
         }
       }
     }
 
-    await db
-      .update(orders)
-      .set({
+    await db.order.update({
+      where: { id: data.orderId },
+      data: {
         status: "cancelled",
         financialStatus: "refunded", // Assuming refunded on cancellation
         fulfillmentStatus: "unfulfilled", // Reset fulfillment status
         cancelledAt: new Date(),
         cancelledReason: data.reason || null,
         updatedAt: new Date(),
-      })
-      .where(eq(orders.id, data.orderId));
+      },
+    });
 
     // Decrease customer stats when order is cancelled (reverse the stats we added when order was created)
     if (orderData.customerId) {
       const orderTotal = parseFloat(orderData.total);
-      
+
       // Get current customer data
-      const [currentCustomer] = await db
-        .select()
-        .from(customers)
-        .where(eq(customers.id, orderData.customerId))
-        .limit(1);
+      const currentCustomer = await db.customer.findFirst({
+        where: { id: orderData.customerId },
+      });
 
       if (currentCustomer) {
         const currentOrdersCount = Math.max(0, (currentCustomer.ordersCount || 0) - 1);
         const currentTotalSpent = Math.max(0, parseFloat(currentCustomer.totalSpent || "0") - orderTotal);
-        
+
         // Decrease orders count and subtract from total spent
-        await db
-          .update(customers)
-          .set({
+        await db.customer.update({
+          where: { id: orderData.customerId },
+          data: {
             ordersCount: currentOrdersCount,
             totalSpent: currentTotalSpent.toFixed(2),
             updatedAt: new Date(),
-          })
-          .where(eq(customers.id, orderData.customerId));
+          },
+        });
       }
     }
 
+    // Mark collections with inventory rules for regeneration
+    await markCollectionsForRegeneration(["inventory"], "product");
+
     // Fetch and return updated order
-    return await getOrderByIdServerFn({ data: { orderId: data.orderId } });
+    return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));
   });
 
 // Get inventory for variants
@@ -941,19 +902,18 @@ export const getInventoryForVariantsServerFn = createServerFn({
       return {};
     }
 
-    const inventoryRecords = await db
-      .select()
-      .from(inventory)
-      .where(
-        or(...data.variantIds.map((id) => eq(inventory.variantId, id)))!
-      );
+    const inventoryRecords = await db.inventory.findMany({
+      where: {
+        variantId: { in: data.variantIds },
+      },
+    });
 
     const inventoryMap: Record<string, typeof inventoryRecords[0]> = {};
     inventoryRecords.forEach((inv) => {
       inventoryMap[inv.variantId] = inv;
     });
 
-    return inventoryMap;
+    return serializeData(inventoryMap);
   });
 
 // Fulfill order - decrease inventory
@@ -986,11 +946,9 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
       if (!item.variantId) continue; // Skip items without variants
 
       // Get current inventory
-      const [currentInventory] = await db
-        .select()
-        .from(inventory)
-        .where(eq(inventory.variantId, item.variantId))
-        .limit(1);
+      const currentInventory = await db.inventory.findFirst({
+        where: { variantId: item.variantId },
+      });
 
       if (!currentInventory) {
         throw new Error(
@@ -1012,51 +970,56 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
       const newAvailable = newOnHand - newReserved - newCommitted;
 
       // Update inventory
-      await db
-        .update(inventory)
-        .set({
+      await db.inventory.update({
+        where: { variantId: item.variantId },
+        data: {
           onHand: newOnHand,
           reserved: newReserved,
           committed: newCommitted,
           available: newAvailable,
           updatedAt: new Date(),
-        })
-        .where(eq(inventory.variantId, item.variantId));
+        },
+      });
 
       // Create inventory tracking record
-      await db.insert(inventoryTracking).values({
-        id: nanoid(),
-        variantId: item.variantId,
-        productId: item.productId || "",
-        type: "fulfillment",
-        quantity: -item.quantity, // Negative because we're decreasing
-        previousAvailable: currentInventory.available,
-        previousReserved: currentInventory.reserved,
-        newAvailable: newAvailable,
-        newReserved: newReserved,
-        reason: `Order fulfillment: ${orderData.orderNumber}`,
-        referenceType: "order",
-        referenceId: data.orderId,
-        userId: null, // You can add user tracking later
+      await db.inventoryTracking.create({
+        data: {
+          id: nanoid(),
+          variantId: item.variantId,
+          productId: item.productId || "",
+          type: "fulfillment",
+          quantity: -item.quantity, // Negative because we're decreasing
+          previousAvailable: currentInventory.available,
+          previousReserved: currentInventory.reserved,
+          newAvailable: newAvailable,
+          newReserved: newReserved,
+          reason: `Order fulfillment: ${orderData.orderNumber}`,
+          referenceType: "order",
+          referenceId: data.orderId,
+          userId: null, // You can add user tracking later
+        },
       });
     }
 
     // Update order fulfillment status, payment status, and order status
-    await db
-      .update(orders)
-      .set({
+    await db.order.update({
+      where: { id: data.orderId },
+      data: {
         status: "fulfilled",
         financialStatus: "paid",
         fulfillmentStatus: "fulfilled",
         updatedAt: new Date(),
-      })
-      .where(eq(orders.id, data.orderId));
+      },
+    });
 
     // Note: Customer stats (ordersCount and totalSpent) are updated when order is created,
     // not when fulfilled, to avoid double-counting
 
+    // Mark collections with inventory rules for regeneration (inventory was decreased)
+    await markCollectionsForRegeneration(["inventory"], "product");
+
     // Fetch and return updated order
-    return await getOrderByIdServerFn({ data: { orderId: data.orderId } });
+    return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));
   });
 
 // Get orders for current user (by email)
@@ -1073,11 +1036,9 @@ export const getUserOrdersServerFn = createServerFn({ method: "POST" })
     const { page = 1, limit = 10 } = data;
 
     // Find customer by email
-    const [customer] = await db
-      .select()
-      .from(customers)
-      .where(eq(customers.email, userEmail))
-      .limit(1);
+    const customer = await db.customer.findFirst({
+      where: { email: userEmail },
+    });
 
     if (!customer) {
       return {
@@ -1091,38 +1052,29 @@ export const getUserOrdersServerFn = createServerFn({ method: "POST" })
     }
 
     // Fetch orders for this customer
-    const ordersQuery = db
-      .select({
-        order: orders,
-      })
-      .from(orders)
-      .where(eq(orders.customerId, customer.id))
-      .orderBy(desc(orders.createdAt))
-      .limit(limit)
-      .offset((page - 1) * limit);
-
-    const response = await ordersQuery;
-    const transformedResponse = response.map((row) => row.order);
+    const response = await db.order.findMany({
+      where: { customerId: customer.id },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: (page - 1) * limit,
+    });
 
     // Get total count
-    const totalQuery = db
-      .select({ count: count() })
-      .from(orders)
-      .where(eq(orders.customerId, customer.id));
+    const totalCount = await db.order.count({
+      where: { customerId: customer.id },
+    });
 
-    const total = await totalQuery;
-    const totalCount = total[0].count;
     const hasNextPage = page * limit < totalCount;
     const hasPreviousPage = page > 1;
 
-    return {
-      data: transformedResponse,
+    return serializeData({
+      data: response,
       total: totalCount,
       hasNextPage,
       hasPreviousPage,
       nextCursor: hasNextPage ? page + 1 : null,
       previousCursor: hasPreviousPage ? page - 1 : null,
-    };
+    });
   });
 
 export const getUserOrdersQueryOptions = (opts: {
@@ -1145,36 +1097,28 @@ export const getUserOrderByIdServerFn = createServerFn({ method: "POST" })
     const userEmail = context.user.email;
 
     // Find customer by email
-    const [customer] = await db
-      .select()
-      .from(customers)
-      .where(eq(customers.email, userEmail))
-      .limit(1);
+    const customer = await db.customer.findFirst({
+      where: { email: userEmail },
+    });
 
     if (!customer) {
       throw new Error("Customer not found");
     }
 
     // Fetch order and verify it belongs to the customer
-    const [orderRow] = await db
-      .select({
-        order: orders,
-      })
-      .from(orders)
-      .where(
-        and(
-          eq(orders.id, data.orderId),
-          eq(orders.customerId, customer.id)
-        )
-      )
-      .limit(1);
+    const orderRow = await db.order.findFirst({
+      where: {
+        id: data.orderId,
+        customerId: customer.id,
+      },
+    });
 
-    if (!orderRow?.order) {
+    if (!orderRow) {
       throw new Error("Order not found");
     }
 
     // Use existing getOrderByIdServerFn logic but with verified order
-    return await getOrderByIdServerFn({ data: { orderId: data.orderId } });
+    return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));
   });
 
 export const getUserOrderByIdQueryOptions = (orderId: string) => {
@@ -1185,4 +1129,3 @@ export const getUserOrderByIdQueryOptions = (orderId: string) => {
     },
   });
 };
-

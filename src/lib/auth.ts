@@ -1,10 +1,10 @@
 import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { db } from "@/db/db"; // your drizzle instance
+import { prismaAdapter } from "better-auth/adapters/prisma";
+import { db } from "@/db/db";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 
 export const auth = betterAuth({
-  database: drizzleAdapter(db, {
+  database: prismaAdapter(db, {
     provider: "mysql",
   }),
   emailAndPassword: {

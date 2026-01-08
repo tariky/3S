@@ -27,12 +27,13 @@ import {
 	RefreshCw,
 	Package,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
 	DndContext,
 	closestCenter,
 	KeyboardSensor,
 	PointerSensor,
+	TouchSensor,
 	useSensor,
 	useSensors,
 	DragEndEvent,
@@ -50,6 +51,24 @@ export const Route = createFileRoute("/admin/collections/$collectionId")({
 	component: EditCollectionPage,
 });
 
+// Type for collection products
+interface CollectionProduct {
+	id: string;
+	productId: string;
+	position: number;
+	isManual: boolean;
+	product: {
+		id: string;
+		name: string;
+		slug: string;
+		price: string;
+		compareAtPrice: string | null;
+		status: string;
+		createdAt?: Date;
+		image?: string | null;
+	};
+}
+
 function EditCollectionPage() {
 	const { collectionId } = Route.useParams();
 	const queryClient = useQueryClient();
@@ -58,26 +77,15 @@ function EditCollectionPage() {
 		getCollectionByIdQueryOptions(collectionId)
 	);
 
-	const { data: products = [], isLoading: productsLoading } = useQuery(
+	const { data: productsData, isLoading: productsLoading } = useQuery(
 		getCollectionProductsQueryOptions(collectionId)
 	);
 
-	const [sortedProducts, setSortedProducts] = useState(products);
+	const [sortedProducts, setSortedProducts] = useState<CollectionProduct[]>([]);
+	// Track the productsData reference to detect when server data actually changes
+	const lastServerDataRef = useRef<typeof productsData>(null);
 
-	// Update sorted products when products data changes
-	useEffect(() => {
-		setSortedProducts(products);
-	}, [products]);
-
-	// DnD sensors
-	const sensors = useSensors(
-		useSensor(PointerSensor),
-		useSensor(KeyboardSensor, {
-			coordinateGetter: sortableKeyboardCoordinates,
-		})
-	);
-
-	// Mutations
+	// Mutations (defined before useEffect that depends on them)
 	const updatePositionsMutation = useMutation({
 		mutationFn: async (data: {
 			collectionId: string;
@@ -86,11 +94,52 @@ function EditCollectionPage() {
 			return await updateCollectionProductPositionsServerFn({ data });
 		},
 		onSuccess: () => {
+			// Update ref to current data so we don't sync stale data
+			lastServerDataRef.current = productsData;
+		},
+		onError: (error) => {
+			console.error("Failed to update positions:", error);
+			// Refetch to restore server state on error
+			lastServerDataRef.current = null; // Allow next sync
 			queryClient.invalidateQueries({
 				queryKey: [COLLECTIONS_QUERY_KEY, collectionId, "products"],
 			});
 		},
 	});
+
+	// Sync sorted products with server data only when it actually changes
+	useEffect(() => {
+		// Only sync if productsData is different from last sync
+		// This prevents overwriting local changes when mutation completes
+		if (productsData && productsData !== lastServerDataRef.current) {
+			setSortedProducts(productsData as CollectionProduct[]);
+			lastServerDataRef.current = productsData;
+		}
+	}, [productsData]);
+
+	// DnD sensors with activation constraints
+	const sensors = useSensors(
+		useSensor(PointerSensor, {
+			activationConstraint: {
+				distance: 8, // Require 8px of movement before activating
+			},
+		}),
+		useSensor(TouchSensor, {
+			activationConstraint: {
+				delay: 250,
+				tolerance: 5,
+			},
+		}),
+		useSensor(KeyboardSensor, {
+			coordinateGetter: sortableKeyboardCoordinates,
+		})
+	);
+
+	// Memoize sortable items to prevent unnecessary re-renders
+	const sortableItems = useMemo(
+		() => sortedProducts.map((p) => p.id),
+		[sortedProducts]
+	);
 
 	const removeProductMutation = useMutation({
 		mutationFn: async (productId: string) => {
@@ -164,8 +213,23 @@ function EditCollectionPage() {
 			{/* Collection Editor */}
 			<CollectionEditor
 				collection={{
-					...collection,
-					rules: collection.rules || [],
+					id: collection.id,
+					name: collection.name,
+					slug: collection.slug,
+					description: collection.description,
+					image: collection.image,
+					ruleMatch: collection.ruleMatch as "all" | "any",
+					sortOrder: collection.sortOrder,
+					active: collection.active,
+					seoTitle: collection.seoTitle,
+					seoDescription: collection.seoDescription,
+					rules: (collection.rules || []).map((rule) => ({
+						id: rule.id,
+						ruleType: rule.ruleType,
+						operator: rule.operator,
+						value: rule.value,
+						position: rule.position,
+					})),
 				}}
 				isEditing
 			/>
@@ -210,7 +274,7 @@ function EditCollectionPage() {
 							onDragEnd={handleDragEnd}
 						>
 							<SortableContext
-								items={sortedProducts.map((p) => p.id)}
+								items={sortableItems}
 								strategy={verticalListSortingStrategy}
 							>
 								<Table>
@@ -252,7 +316,7 @@ function SortableProductRow({
 	onRemove,
 	isRemoving,
 }: {
-	item: any;
+	item: CollectionProduct;
 	onRemove: () => void;
 	isRemoving: boolean;
 }) {

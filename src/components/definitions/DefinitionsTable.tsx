@@ -31,7 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { definitions } from "@/db/schema";
+import type { Definition } from "@/db/schema";
 import { AddDefinitionDialog } from "./AddDefinitionDialog";
 import { EditDefinitionDialog } from "./EditDefinitionDialog";
 import {
@@ -42,8 +42,6 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Route } from "@/routes/admin/products/definitions";
-
-type Definition = typeof definitions.$inferSelect;
 
 export const columns: ColumnDef<Definition>[] = [
   {

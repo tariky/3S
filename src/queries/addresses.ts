@@ -1,8 +1,6 @@
 import { db } from "@/db/db";
 import { mutationOptions, queryOptions } from "@tanstack/react-query";
 import { createServerFn } from "@tanstack/react-start";
-import { addresses, customers } from "@/db/schema";
-import { eq, and, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { authMiddleware } from "@/utils/auth-middleware";
@@ -16,26 +14,21 @@ export const getUserAddressesServerFn = createServerFn({ method: "GET" })
     const userEmail = context.user.email;
 
     // Find customer by email
-    const [customer] = await db
-      .select()
-      .from(customers)
-      .where(eq(customers.email, userEmail))
-      .limit(1);
+    const customer = await db.customer.findFirst({
+      where: { email: userEmail },
+    });
 
     if (!customer) {
       return [];
     }
 
     // Fetch addresses for this customer (not order addresses)
-    const customerAddresses = await db
-      .select()
-      .from(addresses)
-      .where(
-        and(
-          eq(addresses.customerId, customer.id),
-          isNull(addresses.orderId) // Only customer addresses, not order addresses
-        )
-      );
+    const customerAddresses = await db.address.findMany({
+      where: {
+        customerId: customer.id,
+        orderId: null, // Only customer addresses, not order addresses
+      },
+    });
 
     return customerAddresses;
   });
@@ -72,11 +65,9 @@ export const createUserAddressServerFn = createServerFn({ method: "POST" })
     const userEmail = context.user.email;
 
     // Find customer by email
-    const [customer] = await db
-      .select()
-      .from(customers)
-      .where(eq(customers.email, userEmail))
-      .limit(1);
+    const customer = await db.customer.findFirst({
+      where: { email: userEmail },
+    });
 
     if (!customer) {
       throw new Error("Customer not found");
@@ -84,42 +75,35 @@ export const createUserAddressServerFn = createServerFn({ method: "POST" })
 
     // If this is set as default, unset other defaults of the same type
     if (data.isDefault) {
-      await db
-        .update(addresses)
-        .set({ isDefault: false })
-        .where(
-          and(
-            eq(addresses.customerId, customer.id),
-            eq(addresses.type, data.type)
-          )
-        );
+      await db.address.updateMany({
+        where: {
+          customerId: customer.id,
+          type: data.type,
+        },
+        data: { isDefault: false },
+      });
     }
 
     // Create new address
     const addressId = nanoid();
-    await db.insert(addresses).values({
-      id: addressId,
-      customerId: customer.id,
-      type: data.type,
-      firstName: data.firstName || null,
-      lastName: data.lastName || null,
-      company: data.company || null,
-      address1: data.address1,
-      address2: data.address2 || null,
-      city: data.city,
-      state: data.state || null,
-      zip: data.zip || null,
-      country: data.country,
-      phone: data.phone || null,
-      isDefault: data.isDefault || false,
+    const createdAddress = await db.address.create({
+      data: {
+        id: addressId,
+        customerId: customer.id,
+        type: data.type,
+        firstName: data.firstName || null,
+        lastName: data.lastName || null,
+        company: data.company || null,
+        address1: data.address1,
+        address2: data.address2 || null,
+        city: data.city,
+        state: data.state || null,
+        zip: data.zip || null,
+        country: data.country,
+        phone: data.phone || null,
+        isDefault: data.isDefault || false,
+      },
     });
-
-    // Fetch and return created address
-    const [createdAddress] = await db
-      .select()
-      .from(addresses)
-      .where(eq(addresses.id, addressId))
-      .limit(1);
 
     return createdAddress;
   });
@@ -159,27 +143,21 @@ export const updateUserAddressServerFn = createServerFn({ method: "POST" })
     const { addressId, ...updateData } = data;
 
     // Find customer by email
-    const [customer] = await db
-      .select()
-      .from(customers)
-      .where(eq(customers.email, userEmail))
-      .limit(1);
+    const customer = await db.customer.findFirst({
+      where: { email: userEmail },
+    });
 
     if (!customer) {
       throw new Error("Customer not found");
     }
 
     // Verify address belongs to customer
-    const [existingAddress] = await db
-      .select()
-      .from(addresses)
-      .where(
-        and(
-          eq(addresses.id, addressId),
-          eq(addresses.customerId, customer.id)
-        )
-      )
-      .limit(1);
+    const existingAddress = await db.address.findFirst({
+      where: {
+        id: addressId,
+        customerId: customer.id,
+      },
+    });
 
     if (!existingAddress) {
       throw new Error("Address not found");
@@ -188,33 +166,24 @@ export const updateUserAddressServerFn = createServerFn({ method: "POST" })
     // If setting as default, unset other defaults of the same type
     if (updateData.isDefault) {
       const addressType = updateData.type || existingAddress.type;
-      await db
-        .update(addresses)
-        .set({ isDefault: false })
-        .where(
-          and(
-            eq(addresses.customerId, customer.id),
-            eq(addresses.type, addressType),
-            ne(addresses.id, addressId) // Exclude current address
-          )
-        );
+      await db.address.updateMany({
+        where: {
+          customerId: customer.id,
+          type: addressType,
+          NOT: { id: addressId },
+        },
+        data: { isDefault: false },
+      });
     }
 
     // Update address
-    await db
-      .update(addresses)
-      .set({
+    const updatedAddress = await db.address.update({
+      where: { id: addressId },
+      data: {
         ...updateData,
         updatedAt: new Date(),
-      })
-      .where(eq(addresses.id, addressId));
-
-    // Fetch and return updated address
-    const [updatedAddress] = await db
-      .select()
-      .from(addresses)
-      .where(eq(addresses.id, addressId))
-      .limit(1);
+      },
+    });
 
     return updatedAddress;
   });
@@ -237,34 +206,30 @@ export const deleteUserAddressServerFn = createServerFn({ method: "POST" })
     const userEmail = context.user.email;
 
     // Find customer by email
-    const [customer] = await db
-      .select()
-      .from(customers)
-      .where(eq(customers.email, userEmail))
-      .limit(1);
+    const customer = await db.customer.findFirst({
+      where: { email: userEmail },
+    });
 
     if (!customer) {
       throw new Error("Customer not found");
     }
 
     // Verify address belongs to customer
-    const [existingAddress] = await db
-      .select()
-      .from(addresses)
-      .where(
-        and(
-          eq(addresses.id, data.addressId),
-          eq(addresses.customerId, customer.id)
-        )
-      )
-      .limit(1);
+    const existingAddress = await db.address.findFirst({
+      where: {
+        id: data.addressId,
+        customerId: customer.id,
+      },
+    });
 
     if (!existingAddress) {
       throw new Error("Address not found");
     }
 
     // Delete address
-    await db.delete(addresses).where(eq(addresses.id, data.addressId));
+    await db.address.delete({
+      where: { id: data.addressId },
+    });
 
     return { success: true };
   });
@@ -276,4 +241,3 @@ export const deleteUserAddressMutationOptions = (addressId: string) => {
     },
   });
 };
-

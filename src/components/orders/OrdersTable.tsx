@@ -31,7 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { orders } from "@/db/schema";
+import type { Order as PrismaOrder } from "@/db/schema";
 import { getAllOrdersQueryOptions } from "@/queries/orders";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -45,7 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type Order = typeof orders.$inferSelect & {
+type Order = PrismaOrder & {
   customer?: { id: string; firstName: string | null; lastName: string | null; email: string | null } | null;
 };
 

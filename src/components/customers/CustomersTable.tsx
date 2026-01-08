@@ -41,7 +41,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-import { customers } from "@/db/schema";
+import type { Customer } from "@/db/schema";
 import {
   getAllCustomersQueryOptions,
   deleteCustomerMutationOptions,
@@ -52,8 +52,6 @@ import { useState } from "react";
 import { Route } from "@/routes/admin/customers/index";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
-
-type Customer = typeof customers.$inferSelect;
 
 export function CustomersTable() {
   const navigate = useNavigate({ from: Route.fullPath });
