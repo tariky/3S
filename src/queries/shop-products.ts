@@ -5,6 +5,104 @@ import { z } from "zod";
 
 export const SHOP_PRODUCTS_QUERY_KEY = "shop-products";
 
+// Type definitions for shop product
+export interface ShopProductVariantOption {
+	optionName: string;
+	optionValue: string;
+	optionValueId: string;
+}
+
+export interface ShopProductVariant {
+	id: string;
+	productId: string;
+	sku: string | null;
+	price: string | null;
+	compareAtPrice: string | null;
+	position: number;
+	isDefault: boolean;
+	createdAt: Date;
+	updatedAt: Date;
+	inventory: {
+		id: string;
+		variantId: string;
+		available: number;
+		reserved: number;
+		createdAt: Date;
+		updatedAt: Date;
+	} | null;
+	options: ShopProductVariantOption[];
+}
+
+export interface ShopProductOption {
+	id: string;
+	productId: string;
+	name: string;
+	position: number;
+	createdAt: Date;
+	updatedAt: Date;
+	values: {
+		id: string;
+		optionId: string;
+		name: string;
+		position: number;
+		createdAt: Date;
+		updatedAt: Date;
+	}[];
+}
+
+export interface ShopProductMedia {
+	id: string;
+	productId: string;
+	mediaId: string;
+	position: number;
+	isPrimary: boolean;
+	variantId: string | null;
+	createdAt: Date;
+	media: {
+		id: string;
+		url: string;
+		alt: string | null;
+		type: string;
+		filename: string;
+		mimeType: string | null;
+		size: number | null;
+		width: number | null;
+		height: number | null;
+		metadata: Record<string, unknown>;
+		createdAt: Date;
+		storage: string;
+	} | null;
+}
+
+export interface ShopProduct {
+	id: string;
+	name: string;
+	slug: string;
+	description: string | null;
+	sku: string | null;
+	price: string;
+	compareAtPrice: string | null;
+	status: string;
+	material: string | null;
+	categoryId: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+	category: {
+		id: string;
+		name: string;
+		slug: string;
+		description: string | null;
+		image: string | null;
+		parentId: string | null;
+		position: number;
+		createdAt: Date;
+		updatedAt: Date;
+	} | null;
+	media: ShopProductMedia[];
+	options: ShopProductOption[];
+	variants: ShopProductVariant[];
+}
+
 // Get products for shop with images and variants
 export const getShopProductsServerFn = createServerFn({ method: "POST" })
 	.inputValidator(
@@ -317,7 +415,7 @@ export const getShopCategoriesQueryOptions = () => {
 // Get product by slug with all details for product page
 export const getShopProductBySlugServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ slug: z.string() }))
-	.handler(async ({ data }) => {
+	.handler(async ({ data }): Promise<ShopProduct> => {
 		// Fetch product with category and vendor
 		const productRow = await db.product.findFirst({
 			where: {
@@ -420,14 +518,16 @@ export const getShopProductBySlugServerFn = createServerFn({ method: "POST" })
 			media: mediaItems,
 			options,
 			variants,
-		});
+		}) as ShopProduct;
 	});
 
 export const getShopProductBySlugQueryOptions = (slug: string) => {
 	return queryOptions({
 		queryKey: ["shop-product", slug],
-		queryFn: async () => {
-			return await getShopProductBySlugServerFn({ data: { slug } });
+		queryFn: async (): Promise<ShopProduct> => {
+			return (await getShopProductBySlugServerFn({
+				data: { slug },
+			})) as ShopProduct;
 		},
 	});
 };

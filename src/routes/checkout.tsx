@@ -1,23 +1,52 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ShopNavigation } from "@/components/shop/ShopNavigation";
+import { ShopLayout } from "@/components/shop/ShopLayout";
+import { getPublicShopSettingsServerFn } from "@/queries/settings";
+import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getCartQueryOptions, clearCartMutationOptions, CART_QUERY_KEY } from "@/queries/cart";
+import {
+	getCartQueryOptions,
+	clearCartMutationOptions,
+	CART_QUERY_KEY,
+} from "@/queries/cart";
 import { getActiveShippingMethodsQueryOptions } from "@/queries/shipping-methods";
 import { createOrderServerFn } from "@/queries/orders";
-import { getUserAddressesQueryOptions, createUserAddressServerFn, ADDRESSES_QUERY_KEY } from "@/queries/addresses";
+import {
+	getUserAddressesQueryOptions,
+	createUserAddressServerFn,
+	ADDRESSES_QUERY_KEY,
+} from "@/queries/addresses";
 import { useCartSession } from "@/hooks/useCartSession";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, MapPin, Plus, Check } from "lucide-react";
+import {
+	Loader2,
+	Plus,
+	Check,
+	ShoppingBag,
+	ChevronDown,
+	Truck,
+	CreditCard,
+	Tag,
+	X,
+} from "lucide-react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { CityCombobox } from "@/components/ui/city-combobox";
 
 export const Route = createFileRoute("/checkout")({
 	component: CheckoutPage,
+	loader: async () => {
+		const [settings, navigationItems] = await Promise.all([
+			getPublicShopSettingsServerFn(),
+			getPublicNavigationServerFn(),
+		]);
+		return { settings, navigationItems };
+	},
 });
 
 const checkoutSchema = z.object({
@@ -27,45 +56,110 @@ const checkoutSchema = z.object({
 	address: z.string().min(1, "Adresa je obavezna"),
 	city: z.string().min(1, "Grad je obavezan"),
 	zip: z.string().min(1, "Poštanski broj je obavezan"),
-	phone: z.string().min(1, "Telefon je obavezan"),
+	phone: z.string().min(6, "Telefon je obavezan"),
 	shippingMethodId: z.string().min(1, "Morate odabrati način dostave"),
 });
 
+interface CartItem {
+	id: string;
+	quantity: number;
+	productId: string;
+	variantId: string | null;
+	image: string | null;
+	product: {
+		id: string;
+		name: string;
+		slug: string;
+		price: string;
+		sku: string | null;
+	} | null;
+	variant: {
+		id: string;
+		price: string | null;
+		sku: string | null;
+	} | null;
+	variantOptions?: { optionName: string; optionValue: string }[];
+}
+
+interface CartData {
+	cart: { id: string };
+	items: CartItem[];
+}
+
 function CheckoutPage() {
+	const { settings, navigationItems } = Route.useLoaderData();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const { sessionId, clearSession } = useCartSession();
+
 	const { data: cartData, isLoading: cartLoading } = useQuery(
 		getCartQueryOptions(sessionId || undefined)
-	);
-	const { data: shippingMethods = [], isLoading: shippingLoading } = useQuery(
+	) as { data: CartData | undefined; isLoading: boolean };
+
+	const { data: shippingMethodsRaw = [], isLoading: shippingLoading } = useQuery(
 		getActiveShippingMethodsQueryOptions()
 	);
-	
+
+	// Transform shipping methods to use string prices
+	const shippingMethods = shippingMethodsRaw.map((method) => ({
+		id: method.id,
+		name: method.name,
+		description: method.description,
+		price: method.price?.toString() || null,
+		isFreeShipping: method.isFreeShipping,
+		minimumOrderAmount: method.minimumOrderAmount?.toString() || null,
+	}));
+
 	// Auth state
 	const { data: session } = authClient.useSession();
 	const isAuthenticated = !!session?.user;
-	
+
 	// Fetch user's saved addresses if authenticated
 	const { data: savedAddresses = [], isLoading: addressesLoading } = useQuery({
 		...getUserAddressesQueryOptions(),
 		enabled: isAuthenticated,
-	});
+	}) as {
+		data: {
+			id: string;
+			firstName: string | null;
+			lastName: string | null;
+			address1: string | null;
+			city: string | null;
+			zip: string | null;
+			phone: string | null;
+			type: string;
+			isDefault: boolean;
+		}[];
+		isLoading: boolean;
+	};
 
 	const [selectedShippingMethodId, setSelectedShippingMethodId] = useState<
 		string | null
 	>(null);
-	const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+	const [selectedAddressId, setSelectedAddressId] = useState<string | null>(
+		null
+	);
 	const [showNewAddressForm, setShowNewAddressForm] = useState(false);
 	const [saveAddress, setSaveAddress] = useState(true);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [showOrderSummary, setShowOrderSummary] = useState(false);
+	const [discountCode, setDiscountCode] = useState("");
+	const [appliedDiscount, setAppliedDiscount] = useState<{
+		code: string;
+		amount: number;
+		type: "percentage" | "fixed";
+	} | null>(null);
+	const [discountError, setDiscountError] = useState("");
 
-	const clearCartMutation = useMutation(clearCartMutationOptions(sessionId || undefined));
-	
+	const clearCartMutation = useMutation(
+		clearCartMutationOptions(sessionId || undefined)
+	);
+
 	// Get default shipping address
-	const defaultShippingAddress = savedAddresses.find(
-		(addr) => addr.type === "shipping" && addr.isDefault
-	) || savedAddresses.find((addr) => addr.type === "shipping") || savedAddresses[0];
+	const defaultShippingAddress =
+		savedAddresses.find((addr) => addr.type === "shipping" && addr.isDefault) ||
+		savedAddresses.find((addr) => addr.type === "shipping") ||
+		savedAddresses[0];
 
 	const form = useForm({
 		defaultValues: {
@@ -92,6 +186,10 @@ function CheckoutPage() {
 					const price = parseFloat(
 						item.variant?.price || item.product?.price || "0"
 					);
+					const variantLabel =
+						item.variantOptions && item.variantOptions.length > 0
+							? item.variantOptions.map((opt) => opt.optionValue).join(" / ")
+							: null;
 					return {
 						productId: item.productId || null,
 						variantId: item.variantId || null,
@@ -99,15 +197,13 @@ function CheckoutPage() {
 						sku: item.variant?.sku || item.product?.sku || null,
 						quantity: item.quantity,
 						price: price,
-						variantTitle: item.variant
-							? `${item.variant.id}` // You might want to format this better
-							: null,
+						variantTitle: variantLabel,
 					};
 				});
 
 				// Calculate totals
 				const items = cartData.items || [];
-				const subtotal = items.reduce((sum, item) => {
+				const subtotal = items.reduce((sum: number, item: CartItem) => {
 					const price = parseFloat(
 						item.variant?.price || item.product?.price || "0"
 					);
@@ -134,19 +230,24 @@ function CheckoutPage() {
 				};
 
 				const shippingCost = calculateShippingCost();
-				const total = subtotal + shippingCost;
+				const discountAmount = appliedDiscount
+					? appliedDiscount.type === "percentage"
+						? (subtotal * appliedDiscount.amount) / 100
+						: appliedDiscount.amount
+					: 0;
+				const total = subtotal + shippingCost - discountAmount;
 
 				// Create order
-				const order = await createOrderServerFn({
+				const order = (await createOrderServerFn({
 					data: {
 						email: value.email,
 						items: orderItems,
 						shippingMethodId: value.shippingMethodId || null,
-						paymentMethodId: null, // Default to cash on delivery
+						paymentMethodId: null,
 						subtotal: subtotal,
 						tax: 0,
 						shipping: shippingCost,
-						discount: 0,
+						discount: discountAmount,
 						total: total,
 						shippingAddress: {
 							firstName: value.name,
@@ -154,11 +255,11 @@ function CheckoutPage() {
 							address1: value.address,
 							city: value.city,
 							zip: value.zip,
-							country: "Bosnia and Herzegovina", // Default country
+							country: "Bosnia and Herzegovina",
 							phone: value.phone,
 						},
 					},
-				});
+				})) as { id: string };
 
 				// Save address to address book if user is authenticated and wants to save
 				if (isAuthenticated && saveAddress && !selectedAddressId) {
@@ -172,17 +273,13 @@ function CheckoutPage() {
 					});
 				}
 
-				// Clear cart after successful order creation
-				// Important: Clear cart before clearing session to ensure we have the sessionId
+				// Clear cart
 				try {
 					await clearCartMutation.mutateAsync();
-					// Invalidate cart queries to refresh UI
 					queryClient.invalidateQueries({ queryKey: [CART_QUERY_KEY] });
-					// Clear session after cart is cleared
 					clearSession();
 				} catch (error) {
 					console.error("Error clearing cart:", error);
-					// Try to clear session anyway, but don't fail the order
 					try {
 						clearSession();
 					} catch (sessionError) {
@@ -190,16 +287,15 @@ function CheckoutPage() {
 					}
 				}
 
-				// Redirect to thank you page with order ID
 				navigate({
 					to: "/thank-you",
 					search: { orderId: order.id },
 				});
-			} catch (error: any) {
+			} catch (error: unknown) {
 				console.error("Error creating order:", error);
-				// Show error message to user
+				const err = error as { message?: string };
 				const errorMessage =
-					error?.message ||
+					err?.message ||
 					"Greška pri kreiranju narudžbe. Molimo pokušajte ponovo.";
 				alert(errorMessage);
 			} finally {
@@ -210,7 +306,12 @@ function CheckoutPage() {
 
 	// Auto-fill form with default address when addresses are loaded
 	useEffect(() => {
-		if (isAuthenticated && defaultShippingAddress && !selectedAddressId && savedAddresses.length > 0) {
+		if (
+			isAuthenticated &&
+			defaultShippingAddress &&
+			!selectedAddressId &&
+			savedAddresses.length > 0
+		) {
 			setSelectedAddressId(defaultShippingAddress.id);
 			fillFormWithAddress(defaultShippingAddress);
 		}
@@ -224,7 +325,7 @@ function CheckoutPage() {
 	}, [session?.user?.email]);
 
 	// Function to fill form with address data
-	const fillFormWithAddress = (address: typeof savedAddresses[0]) => {
+	const fillFormWithAddress = (address: (typeof savedAddresses)[0]) => {
 		form.setFieldValue("name", address.firstName || "");
 		form.setFieldValue("lastName", address.lastName || "");
 		form.setFieldValue("address", address.address1 || "");
@@ -247,7 +348,6 @@ function CheckoutPage() {
 	const handleNewAddressClick = () => {
 		setSelectedAddressId(null);
 		setShowNewAddressForm(true);
-		// Clear form for new address
 		form.setFieldValue("name", "");
 		form.setFieldValue("lastName", "");
 		form.setFieldValue("address", "");
@@ -256,7 +356,7 @@ function CheckoutPage() {
 		form.setFieldValue("phone", "");
 	};
 
-	// Save address to address book (called after successful order)
+	// Save address to address book
 	const saveAddressToBook = async (addressData: {
 		firstName: string;
 		lastName: string;
@@ -266,7 +366,6 @@ function CheckoutPage() {
 		phone: string;
 	}) => {
 		if (!isAuthenticated || !saveAddress || selectedAddressId) {
-			// Don't save if not authenticated, user doesn't want to save, or using existing address
 			return;
 		}
 
@@ -281,37 +380,51 @@ function CheckoutPage() {
 					zip: addressData.zip,
 					country: "Bosnia and Herzegovina",
 					phone: addressData.phone,
-					isDefault: savedAddresses.length === 0, // Make default if first address
+					isDefault: savedAddresses.length === 0,
 				},
 			});
-			// Invalidate addresses query to refresh the list
 			queryClient.invalidateQueries({ queryKey: [ADDRESSES_QUERY_KEY] });
 		} catch (error) {
 			console.error("Error saving address:", error);
-			// Don't fail the order if address save fails
 		}
+	};
+
+	// Apply discount code (placeholder - implement actual discount logic)
+	const handleApplyDiscount = () => {
+		setDiscountError("");
+		if (!discountCode.trim()) {
+			setDiscountError("Unesite kod za popust");
+			return;
+		}
+
+		// Placeholder: In a real app, validate discount code against backend
+		// For now, we'll just show an error
+		setDiscountError("Kod za popust nije validan");
+	};
+
+	const removeDiscount = () => {
+		setAppliedDiscount(null);
+		setDiscountCode("");
+		setDiscountError("");
 	};
 
 	// Calculate totals
 	const items = cartData?.items || [];
-	const subtotal = items.reduce((sum, item) => {
+	const subtotal = items.reduce((sum: number, item: CartItem) => {
 		const price = parseFloat(
 			item.variant?.price || item.product?.price || "0"
 		);
 		return sum + price * item.quantity;
 	}, 0);
 
-	// Filter shipping methods: show free shipping only if cart total meets minimum
+	// Filter shipping methods
 	const availableShippingMethods = shippingMethods.filter((method) => {
-		// If it's a free shipping method
 		if (method.isFreeShipping) {
 			const minimumAmount = method.minimumOrderAmount
 				? parseFloat(method.minimumOrderAmount)
 				: 0;
-			// Only show if cart total meets minimum order amount
 			return subtotal >= minimumAmount;
 		}
-		// Always show non-free shipping methods
 		return true;
 	});
 
@@ -324,7 +437,6 @@ function CheckoutPage() {
 	const calculateShippingCost = () => {
 		if (!selectedShippingMethod) return 0;
 
-		// Check if free shipping applies
 		if (selectedShippingMethod.isFreeShipping) {
 			const minimumAmount = selectedShippingMethod.minimumOrderAmount
 				? parseFloat(selectedShippingMethod.minimumOrderAmount)
@@ -338,360 +450,181 @@ function CheckoutPage() {
 	};
 
 	const shippingCost = calculateShippingCost();
-	const total = subtotal + shippingCost;
+	const discountAmount = appliedDiscount
+		? appliedDiscount.type === "percentage"
+			? (subtotal * appliedDiscount.amount) / 100
+			: appliedDiscount.amount
+		: 0;
+	const total = subtotal + shippingCost - discountAmount;
+	const itemCount = items.reduce(
+		(sum: number, item: CartItem) => sum + item.quantity,
+		0
+	);
 
-	// Auto-select first shipping method if available
-	if (
-		availableShippingMethods.length > 0 &&
-		!selectedShippingMethodId &&
-		!shippingLoading
-	) {
-		setSelectedShippingMethodId(availableShippingMethods[0].id);
-		form.setFieldValue("shippingMethodId", availableShippingMethods[0].id);
-	}
+	// Auto-select first shipping method
+	useEffect(() => {
+		if (
+			availableShippingMethods.length > 0 &&
+			!selectedShippingMethodId &&
+			!shippingLoading
+		) {
+			setSelectedShippingMethodId(availableShippingMethods[0].id);
+			form.setFieldValue("shippingMethodId", availableShippingMethods[0].id);
+		}
+	}, [availableShippingMethods.length, shippingLoading]);
 
 	// Reset selection if current selection is not available
-	if (
-		selectedShippingMethodId &&
-		!availableShippingMethods.find(
-			(m) => m.id === selectedShippingMethodId
-		) &&
-		availableShippingMethods.length > 0
-	) {
-		setSelectedShippingMethodId(availableShippingMethods[0].id);
-		form.setFieldValue("shippingMethodId", availableShippingMethods[0].id);
-	}
+	useEffect(() => {
+		if (
+			selectedShippingMethodId &&
+			!availableShippingMethods.find((m) => m.id === selectedShippingMethodId) &&
+			availableShippingMethods.length > 0
+		) {
+			setSelectedShippingMethodId(availableShippingMethods[0].id);
+			form.setFieldValue("shippingMethodId", availableShippingMethods[0].id);
+		}
+	}, [selectedShippingMethodId, availableShippingMethods]);
 
-	if (cartLoading || shippingLoading || (isAuthenticated && addressesLoading)) {
+	if (
+		cartLoading ||
+		shippingLoading ||
+		(isAuthenticated && addressesLoading)
+	) {
 		return (
-			<div className="min-h-screen bg-gray-50">
-				<ShopNavigation />
-				<div className="container mx-auto px-4 py-12">
-					<div className="flex items-center justify-center">
-						<Loader2 className="size-8 animate-spin text-primary" />
-					</div>
+			<ShopLayout settings={settings} navigationItems={navigationItems}>
+				<div className="min-h-[60vh] flex items-center justify-center">
+					<Loader2 className="size-8 animate-spin text-gray-400" />
 				</div>
-			</div>
+			</ShopLayout>
 		);
 	}
 
 	if (!cartData || items.length === 0) {
 		return (
-			<div className="min-h-screen bg-gray-50">
-				<ShopNavigation />
-				<div className="container mx-auto px-4 py-12">
-					<div className="text-center">
-						<h1 className="text-2xl font-bold text-gray-900 mb-4">
-							Korpa je prazna
-						</h1>
-						<p className="text-gray-600 mb-6">
-							Morate imati proizvode u korpi da biste nastavili na plaćanje.
-						</p>
-						<Button asChild>
-							<Link to="/products">Nastavi kupovinu</Link>
-						</Button>
+			<ShopLayout settings={settings} navigationItems={navigationItems}>
+				<div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
+					<div className="w-20 h-20 rounded-full bg-gray-50 flex items-center justify-center mb-6">
+						<ShoppingBag className="size-10 text-gray-300" />
 					</div>
+					<h1 className="text-xl font-semibold text-gray-900 mb-2">
+						Korpa je prazna
+					</h1>
+					<p className="text-sm text-gray-500 mb-8 text-center max-w-xs">
+						Dodajte proizvode u korpu da biste nastavili na plaćanje
+					</p>
+					<Button asChild size="lg">
+						<Link to="/products" search={{ tags: undefined }}>
+							Pogledaj proizvode
+						</Link>
+					</Button>
 				</div>
-			</div>
+			</ShopLayout>
 		);
 	}
 
 	return (
-		<div className="min-h-screen bg-gray-50">
-			<ShopNavigation />
-			<main className="container mx-auto px-4 py-8">
-				<div className="max-w-4xl mx-auto">
-					<h1 className="text-3xl font-bold text-gray-900 mb-8">
-						Plaćanje
-					</h1>
+		<ShopLayout settings={settings} navigationItems={navigationItems}>
+			<main className="min-h-screen bg-gray-50">
+				<div className="container mx-auto px-4 py-6 lg:py-10">
+					<div className="max-w-6xl mx-auto">
+						{/* Header */}
+						<div className="mb-8">
+							<h1 className="text-2xl lg:text-3xl font-semibold text-gray-900">
+								Naplata
+							</h1>
+							<p className="text-sm text-gray-500 mt-1">
+								Popunite podatke za dostavu i plaćanje
+							</p>
+						</div>
 
-					<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-						{/* Checkout Form */}
-						<div className="lg:col-span-2 space-y-6">
-							<form
-								onSubmit={(e) => {
-									e.preventDefault();
-									e.stopPropagation();
-									form.handleSubmit();
-								}}
-							>
-								{/* Contact Information */}
-								<div className="bg-white p-6 rounded-lg border border-gray-200">
-									<h2 className="text-xl font-semibold text-gray-900 mb-4">
-										Kontakt informacije
-									</h2>
-									<div className="space-y-4">
-										{/* Email */}
-										<form.Field
-											name="email"
-											validators={{
-												onChange: ({ value }) => {
-													const result = checkoutSchema.shape.email.safeParse(
-														value
-													);
-													return result.success
-														? undefined
-														: result.error.errors[0]?.message;
-												},
-											}}
-										>
-											{(field) => (
-												<div className="space-y-2">
-													<Label htmlFor="email">Email *</Label>
-													<Input
-														id="email"
-														type="email"
-														value={field.state.value}
-														onBlur={field.handleBlur}
-														onChange={(e) => field.handleChange(e.target.value)}
-														placeholder="vas@email.com"
-														required
-														className={cn(
-															field.state.meta.errors.length > 0 &&
-																"border-red-500"
-														)}
-													/>
-													{field.state.meta.errors.length > 0 && (
-														<p className="text-sm text-red-500">
-															{field.state.meta.errors[0]}
-														</p>
-													)}
-												</div>
-											)}
-										</form.Field>
-
-										{/* Phone */}
-										<form.Field
-											name="phone"
-											validators={{
-												onChange: ({ value }) => {
-													const result = checkoutSchema.shape.phone.safeParse(
-														value
-													);
-													return result.success
-														? undefined
-														: result.error.errors[0]?.message;
-												},
-											}}
-										>
-											{(field) => (
-												<div className="space-y-2">
-													<Label htmlFor="phone">Telefon *</Label>
-													<Input
-														id="phone"
-														type="tel"
-														value={field.state.value}
-														onBlur={field.handleBlur}
-														onChange={(e) => field.handleChange(e.target.value)}
-														placeholder="+387 61 123 456"
-														required
-														className={cn(
-															field.state.meta.errors.length > 0 &&
-																"border-red-500"
-														)}
-													/>
-													{field.state.meta.errors.length > 0 && (
-														<p className="text-sm text-red-500">
-															{field.state.meta.errors[0]}
-														</p>
-													)}
-												</div>
-											)}
-										</form.Field>
-									</div>
-								</div>
-
-								{/* Shipping Address */}
-								<div className="bg-white p-6 rounded-lg border border-gray-200">
-									<h2 className="text-xl font-semibold text-gray-900 mb-4">
-										Adresa za dostavu
-									</h2>
-									
-									{/* Address Picker for authenticated users */}
-									{isAuthenticated && savedAddresses.length > 0 && (
-										<div className="mb-6">
-											<Label className="text-sm font-medium text-gray-700 mb-3 block">
-												Odaberite sačuvanu adresu
-											</Label>
-											<div className="grid gap-3">
-												{savedAddresses
-													.filter((addr) => addr.type === "shipping" || !addr.type)
-													.map((address) => (
-														<button
-															key={address.id}
-															type="button"
-															onClick={() => handleAddressSelect(address.id)}
-															className={cn(
-																"w-full text-left p-4 border rounded-lg transition-all",
-																selectedAddressId === address.id
-																	? "border-primary bg-primary/5 ring-1 ring-primary"
-																	: "border-gray-200 hover:border-gray-300"
-															)}
-														>
-															<div className="flex items-start gap-3">
-																<div className={cn(
-																	"mt-0.5 size-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
-																	selectedAddressId === address.id
-																		? "border-primary bg-primary"
-																		: "border-gray-300"
-																)}>
-																	{selectedAddressId === address.id && (
-																		<Check className="size-3 text-white" />
-																	)}
-																</div>
-																<div className="flex-1 min-w-0">
-																	<div className="flex items-center gap-2">
-																		<MapPin className="size-4 text-gray-400" />
-																		<span className="font-medium text-gray-900">
-																			{[address.firstName, address.lastName].filter(Boolean).join(" ") || "Adresa"}
-																		</span>
-																		{address.isDefault && (
-																			<span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-																				Zadano
-																			</span>
-																		)}
-																	</div>
-																	<p className="text-sm text-gray-600 mt-1">
-																		{address.address1}
-																		{address.city && `, ${address.city}`}
-																		{address.zip && ` ${address.zip}`}
-																	</p>
-																	{address.phone && (
-																		<p className="text-sm text-gray-500 mt-0.5">
-																			{address.phone}
-																		</p>
-																	)}
-																</div>
-															</div>
-														</button>
-													))}
-												
-												{/* New Address Option */}
-												<button
-													type="button"
-													onClick={handleNewAddressClick}
-													className={cn(
-														"w-full text-left p-4 border rounded-lg transition-all",
-														showNewAddressForm && !selectedAddressId
-															? "border-primary bg-primary/5 ring-1 ring-primary"
-															: "border-gray-200 hover:border-gray-300 border-dashed"
-													)}
-												>
-													<div className="flex items-center gap-3">
-														<div className={cn(
-															"size-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
-															showNewAddressForm && !selectedAddressId
-																? "border-primary bg-primary"
-																: "border-gray-300"
-														)}>
-															{showNewAddressForm && !selectedAddressId ? (
-																<Check className="size-3 text-white" />
-															) : (
-																<Plus className="size-3 text-gray-400" />
-															)}
-														</div>
-														<span className="font-medium text-gray-700">
-															Koristi novu adresu
-														</span>
-													</div>
-												</button>
+						<div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+							{/* Checkout Form */}
+							<div className="lg:col-span-7 space-y-6">
+								<form
+									onSubmit={(e) => {
+										e.preventDefault();
+										e.stopPropagation();
+										form.handleSubmit();
+									}}
+									className="space-y-6"
+								>
+									{/* Contact Information */}
+									<section className="bg-white rounded-xl p-6 shadow-sm">
+										<h2 className="text-base font-semibold text-gray-900 mb-5 flex items-center gap-2">
+											<div className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center">
+												1
 											</div>
-										</div>
-									)}
-									
-									{/* Show form if no saved addresses or user wants new address */}
-									{(!isAuthenticated || savedAddresses.length === 0 || showNewAddressForm || !selectedAddressId) && (
-									<div className="space-y-4">
-										{/* Save address checkbox for authenticated users entering new address */}
-										{isAuthenticated && !selectedAddressId && (
-											<div className="flex items-center gap-2 mb-4 p-3 bg-gray-50 rounded-lg">
-												<input
-													type="checkbox"
-													id="saveAddress"
-													checked={saveAddress}
-													onChange={(e) => setSaveAddress(e.target.checked)}
-													className="size-4 text-primary focus:ring-primary rounded"
-												/>
-												<Label htmlFor="saveAddress" className="text-sm text-gray-700 cursor-pointer">
-													Sačuvaj adresu za buduće narudžbe
-												</Label>
-											</div>
-										)}
-										
-										{/* Name and Last Name */}
-										<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-											<form.Field
-												name="name"
-												validators={{
-													onChange: ({ value }) => {
-														const result = checkoutSchema.shape.name.safeParse(
-															value
-														);
-														return result.success
-															? undefined
-															: result.error.errors[0]?.message;
-													},
-												}}
-											>
-												{(field) => (
-													<div className="space-y-2">
-														<Label htmlFor="name">Ime *</Label>
-														<Input
-															id="name"
-															type="text"
-															value={field.state.value}
-															onBlur={field.handleBlur}
-															onChange={(e) =>
-																field.handleChange(e.target.value)
-															}
-															placeholder="Maja"
-															required
-															className={cn(
-																field.state.meta.errors.length > 0 &&
-																	"border-red-500"
-															)}
-														/>
-														{field.state.meta.errors.length > 0 && (
-															<p className="text-sm text-red-500">
-																{field.state.meta.errors[0]}
-															</p>
-														)}
-													</div>
-												)}
-											</form.Field>
+											Kontakt podaci
+										</h2>
 
+										<div className="space-y-4">
+											{/* Email */}
 											<form.Field
-												name="lastName"
+												name="email"
 												validators={{
 													onChange: ({ value }) => {
 														const result =
-															checkoutSchema.shape.lastName.safeParse(value);
+															checkoutSchema.shape.email.safeParse(value);
 														return result.success
 															? undefined
-															: result.error.errors[0]?.message;
+															: result.error.issues[0]?.message;
 													},
 												}}
 											>
 												{(field) => (
-													<div className="space-y-2">
-														<Label htmlFor="lastName">Prezime *</Label>
+													<div className="space-y-1.5">
+														<Label htmlFor="email" className="text-sm">
+															Email adresa
+														</Label>
 														<Input
-															id="lastName"
-															type="text"
+															id="email"
+															type="email"
 															value={field.state.value}
 															onBlur={field.handleBlur}
 															onChange={(e) =>
 																field.handleChange(e.target.value)
 															}
-															placeholder="Majić"
-															required
+															placeholder="vas@email.com"
 															className={cn(
+																"h-11",
 																field.state.meta.errors.length > 0 &&
 																	"border-red-500"
 															)}
 														/>
 														{field.state.meta.errors.length > 0 && (
-															<p className="text-sm text-red-500">
+															<p className="text-xs text-red-500">
+																{field.state.meta.errors[0]}
+															</p>
+														)}
+													</div>
+												)}
+											</form.Field>
+
+											{/* Phone */}
+											<form.Field
+												name="phone"
+												validators={{
+													onBlur: ({ value }) => {
+														const result =
+															checkoutSchema.shape.phone.safeParse(value);
+														return result.success
+															? undefined
+															: result.error.issues[0]?.message;
+													},
+												}}
+											>
+												{(field) => (
+													<div className="space-y-1.5">
+														<Label htmlFor="phone" className="text-sm">
+															Telefon
+														</Label>
+														<PhoneInput
+															value={field.state.value}
+															onChange={(phone) => field.handleChange(phone)}
+															error={field.state.meta.isTouched && field.state.meta.errors.length > 0}
+														/>
+														{field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
+															<p className="text-xs text-red-500">
 																{field.state.meta.errors[0]}
 															</p>
 														)}
@@ -699,181 +632,392 @@ function CheckoutPage() {
 												)}
 											</form.Field>
 										</div>
+									</section>
 
-										{/* Address */}
-										<form.Field
-											name="address"
-											validators={{
-												onChange: ({ value }) => {
-													const result = checkoutSchema.shape.address.safeParse(
-														value
-													);
-													return result.success
-														? undefined
-														: result.error.errors[0]?.message;
-												},
-											}}
-										>
-											{(field) => (
+									{/* Shipping Address */}
+									<section className="bg-white rounded-xl p-6 shadow-sm">
+										<h2 className="text-base font-semibold text-gray-900 mb-5 flex items-center gap-2">
+											<div className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center">
+												2
+											</div>
+											Adresa za dostavu
+										</h2>
+
+										{/* Saved Addresses */}
+										{isAuthenticated && savedAddresses.length > 0 && (
+											<div className="mb-6">
 												<div className="space-y-2">
-													<Label htmlFor="address">Adresa *</Label>
-													<Input
-														id="address"
-														type="text"
-														value={field.state.value}
-														onBlur={field.handleBlur}
-														onChange={(e) => field.handleChange(e.target.value)}
-														placeholder="Ulica i broj"
-														required
+													{savedAddresses
+														.filter(
+															(addr) =>
+																addr.type === "shipping" || !addr.type
+														)
+														.map((address) => (
+															<button
+																key={address.id}
+																type="button"
+																onClick={() =>
+																	handleAddressSelect(address.id)
+																}
+																className={cn(
+																	"w-full text-left p-4 border rounded-lg transition-all",
+																	selectedAddressId === address.id
+																		? "border-gray-900 bg-gray-50"
+																		: "border-gray-200 hover:border-gray-300"
+																)}
+															>
+																<div className="flex items-start gap-3">
+																	<div
+																		className={cn(
+																			"mt-0.5 size-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
+																			selectedAddressId === address.id
+																				? "border-gray-900 bg-gray-900"
+																				: "border-gray-300"
+																		)}
+																	>
+																		{selectedAddressId === address.id && (
+																			<Check className="size-3 text-white" />
+																		)}
+																	</div>
+																	<div className="flex-1 min-w-0">
+																		<div className="flex items-center gap-2">
+																			<span className="font-medium text-gray-900 text-sm">
+																				{[
+																					address.firstName,
+																					address.lastName,
+																				]
+																					.filter(Boolean)
+																					.join(" ") || "Adresa"}
+																			</span>
+																			{address.isDefault && (
+																				<span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+																					Zadano
+																				</span>
+																			)}
+																		</div>
+																		<p className="text-sm text-gray-600 mt-0.5">
+																			{address.address1}
+																			{address.city && `, ${address.city}`}
+																			{address.zip && ` ${address.zip}`}
+																		</p>
+																	</div>
+																</div>
+															</button>
+														))}
+
+													<button
+														type="button"
+														onClick={handleNewAddressClick}
 														className={cn(
-															field.state.meta.errors.length > 0 &&
-																"border-red-500"
+															"w-full text-left p-4 border border-dashed rounded-lg transition-all",
+															showNewAddressForm && !selectedAddressId
+																? "border-gray-900 bg-gray-50"
+																: "border-gray-300 hover:border-gray-400"
 														)}
-													/>
-													{field.state.meta.errors.length > 0 && (
-														<p className="text-sm text-red-500">
-															{field.state.meta.errors[0]}
-														</p>
-													)}
+													>
+														<div className="flex items-center gap-3">
+															<div
+																className={cn(
+																	"size-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
+																	showNewAddressForm && !selectedAddressId
+																		? "border-gray-900 bg-gray-900"
+																		: "border-gray-300"
+																)}
+															>
+																{showNewAddressForm && !selectedAddressId ? (
+																	<Check className="size-3 text-white" />
+																) : (
+																	<Plus className="size-3 text-gray-400" />
+																)}
+															</div>
+															<span className="font-medium text-gray-700 text-sm">
+																Koristi novu adresu
+															</span>
+														</div>
+													</button>
 												</div>
-											)}
-										</form.Field>
+											</div>
+										)}
 
-										{/* City and Zip */}
-										<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-											<form.Field
-												name="city"
-												validators={{
-													onChange: ({ value }) => {
-														const result = checkoutSchema.shape.city.safeParse(
-															value
-														);
-														return result.success
-															? undefined
-															: result.error.errors[0]?.message;
-													},
-												}}
-											>
-												{(field) => (
-													<div className="space-y-2">
-														<Label htmlFor="city">Grad *</Label>
-														<Input
-															id="city"
-															type="text"
-															value={field.state.value}
-															onBlur={field.handleBlur}
+										{/* Address Form */}
+										{(!isAuthenticated ||
+											savedAddresses.length === 0 ||
+											showNewAddressForm ||
+											!selectedAddressId) && (
+											<div className="space-y-4">
+												{isAuthenticated && !selectedAddressId && (
+													<label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg cursor-pointer">
+														<input
+															type="checkbox"
+															checked={saveAddress}
 															onChange={(e) =>
-																field.handleChange(e.target.value)
+																setSaveAddress(e.target.checked)
 															}
-															placeholder="Sarajevo"
-															required
-															className={cn(
-																field.state.meta.errors.length > 0 &&
-																	"border-red-500"
-															)}
+															className="size-4 text-gray-900 rounded"
 														/>
-														{field.state.meta.errors.length > 0 && (
-															<p className="text-sm text-red-500">
-																{field.state.meta.errors[0]}
-															</p>
-														)}
-													</div>
+														<span className="text-sm text-gray-700">
+															Sačuvaj adresu za buduće narudžbe
+														</span>
+													</label>
 												)}
-											</form.Field>
 
-											<form.Field
-												name="zip"
-												validators={{
-													onChange: ({ value }) => {
-														const result = checkoutSchema.shape.zip.safeParse(
-															value
-														);
-														return result.success
-															? undefined
-															: result.error.errors[0]?.message;
-													},
-												}}
-											>
-												{(field) => (
-													<div className="space-y-2">
-														<Label htmlFor="zip">Poštanski broj *</Label>
-														<Input
-															id="zip"
-															type="text"
-															value={field.state.value}
-															onBlur={field.handleBlur}
-															onChange={(e) =>
-																field.handleChange(e.target.value)
-															}
-															placeholder="71000"
-															required
-															className={cn(
-																field.state.meta.errors.length > 0 &&
-																	"border-red-500"
-															)}
-														/>
-														{field.state.meta.errors.length > 0 && (
-															<p className="text-sm text-red-500">
-																{field.state.meta.errors[0]}
-															</p>
+												{/* Name Row */}
+												<div className="grid grid-cols-2 gap-4">
+													<form.Field
+														name="name"
+														validators={{
+															onChange: ({ value }) => {
+																const result =
+																	checkoutSchema.shape.name.safeParse(value);
+																return result.success
+																	? undefined
+																	: result.error.issues[0]?.message;
+															},
+														}}
+													>
+														{(field) => (
+															<div className="space-y-1.5">
+																<Label htmlFor="name" className="text-sm">
+																	Ime
+																</Label>
+																<Input
+																	id="name"
+																	type="text"
+																	value={field.state.value}
+																	onBlur={field.handleBlur}
+																	onChange={(e) =>
+																		field.handleChange(e.target.value)
+																	}
+																	placeholder="Ime"
+																	className={cn(
+																		"h-11",
+																		field.state.meta.errors.length > 0 &&
+																			"border-red-500"
+																	)}
+																/>
+															</div>
 														)}
-													</div>
-												)}
-											</form.Field>
+													</form.Field>
+
+													<form.Field
+														name="lastName"
+														validators={{
+															onChange: ({ value }) => {
+																const result =
+																	checkoutSchema.shape.lastName.safeParse(
+																		value
+																	);
+																return result.success
+																	? undefined
+																	: result.error.issues[0]?.message;
+															},
+														}}
+													>
+														{(field) => (
+															<div className="space-y-1.5">
+																<Label htmlFor="lastName" className="text-sm">
+																	Prezime
+																</Label>
+																<Input
+																	id="lastName"
+																	type="text"
+																	value={field.state.value}
+																	onBlur={field.handleBlur}
+																	onChange={(e) =>
+																		field.handleChange(e.target.value)
+																	}
+																	placeholder="Prezime"
+																	className={cn(
+																		"h-11",
+																		field.state.meta.errors.length > 0 &&
+																			"border-red-500"
+																	)}
+																/>
+															</div>
+														)}
+													</form.Field>
+												</div>
+
+												{/* Address */}
+												<form.Field
+													name="address"
+													validators={{
+														onChange: ({ value }) => {
+															const result =
+																checkoutSchema.shape.address.safeParse(value);
+															return result.success
+																? undefined
+																: result.error.issues[0]?.message;
+														},
+													}}
+												>
+													{(field) => (
+														<div className="space-y-1.5">
+															<Label htmlFor="address" className="text-sm">
+																Ulica i broj
+															</Label>
+															<Input
+																id="address"
+																type="text"
+																value={field.state.value}
+																onBlur={field.handleBlur}
+																onChange={(e) =>
+																	field.handleChange(e.target.value)
+																}
+																placeholder="Ulica i kućni broj"
+																className={cn(
+																	"h-11",
+																	field.state.meta.errors.length > 0 &&
+																		"border-red-500"
+																)}
+															/>
+														</div>
+													)}
+												</form.Field>
+
+												{/* City and Zip */}
+												<div className="grid grid-cols-2 gap-4">
+													<form.Field
+														name="city"
+														validators={{
+															onChange: ({ value }) => {
+																const result =
+																	checkoutSchema.shape.city.safeParse(value);
+																return result.success
+																	? undefined
+																	: result.error.issues[0]?.message;
+															},
+														}}
+													>
+														{(field) => (
+															<div className="space-y-1.5">
+																<Label htmlFor="city" className="text-sm">
+																	Grad
+																</Label>
+																<CityCombobox
+																	value={field.state.value}
+																	onCityChange={(city) =>
+																		field.handleChange(city)
+																	}
+																	onZipChange={(zip) =>
+																		form.setFieldValue("zip", zip)
+																	}
+																	error={field.state.meta.errors.length > 0}
+																/>
+															</div>
+														)}
+													</form.Field>
+
+													<form.Field
+														name="zip"
+														validators={{
+															onChange: ({ value }) => {
+																const result =
+																	checkoutSchema.shape.zip.safeParse(value);
+																return result.success
+																	? undefined
+																	: result.error.issues[0]?.message;
+															},
+														}}
+													>
+														{(field) => (
+															<div className="space-y-1.5">
+																<Label htmlFor="zip" className="text-sm">
+																	Poštanski broj
+																</Label>
+																<Input
+																	id="zip"
+																	type="text"
+																	value={field.state.value}
+																	onBlur={field.handleBlur}
+																	onChange={(e) =>
+																		field.handleChange(e.target.value)
+																	}
+																	placeholder="71000"
+																	className={cn(
+																		"h-11",
+																		field.state.meta.errors.length > 0 &&
+																			"border-red-500"
+																	)}
+																/>
+															</div>
+														)}
+													</form.Field>
+												</div>
+											</div>
+										)}
+									</section>
+
+									{/* Discount Code - Mobile Only */}
+									<section className="bg-white rounded-xl p-6 shadow-sm lg:hidden">
+										<div className="flex items-center gap-2 mb-4">
+											<Tag className="size-4 text-gray-500" />
+											<span className="text-base font-semibold text-gray-900">
+												Kod za popust
+											</span>
 										</div>
-									</div>
-									)}
-								</div>
+										{appliedDiscount ? (
+											<div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
+												<div className="flex items-center gap-2">
+													<Check className="size-4 text-emerald-600" />
+													<span className="text-sm font-medium text-emerald-700">
+														{appliedDiscount.code}
+													</span>
+												</div>
+												<button
+													type="button"
+													onClick={removeDiscount}
+													className="text-gray-500 hover:text-gray-700"
+												>
+													<X className="size-4" />
+												</button>
+											</div>
+										) : (
+											<div className="flex gap-2">
+												<Input
+													value={discountCode}
+													onChange={(e) => setDiscountCode(e.target.value)}
+													placeholder="Unesite kod"
+													className={cn(
+														"h-11 flex-1",
+														discountError && "border-red-500"
+													)}
+												/>
+												<Button
+													type="button"
+													variant="outline"
+													onClick={handleApplyDiscount}
+													className="h-11 px-4"
+												>
+													Primjeni
+												</Button>
+											</div>
+										)}
+										{discountError && (
+											<p className="text-xs text-red-500 mt-2">
+												{discountError}
+											</p>
+										)}
+									</section>
 
-								{/* Shipping Method */}
-								<div className="bg-white p-6 rounded-lg border border-gray-200">
-									<h2 className="text-xl font-semibold text-gray-900 mb-4">
-										Način dostave
-									</h2>
-									{availableShippingMethods.length === 0 ? (
-										<div className="space-y-2">
-											<p className="text-gray-600">
+									{/* Shipping Method */}
+									<section className="bg-white rounded-xl p-6 shadow-sm">
+										<h2 className="text-base font-semibold text-gray-900 mb-5 flex items-center gap-2">
+											<div className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center">
+												3
+											</div>
+											<Truck className="size-4" />
+											Dostava
+										</h2>
+
+										{availableShippingMethods.length === 0 ? (
+											<p className="text-sm text-gray-500">
 												Nema dostupnih načina dostave.
 											</p>
-											{shippingMethods.some(
-												(m) =>
-													m.isFreeShipping &&
-													m.minimumOrderAmount &&
-													subtotal < parseFloat(m.minimumOrderAmount)
-											) && (
-												<p className="text-sm text-gray-500">
-													Za besplatnu dostavu potrebno je naručiti za najmanje{" "}
-													{Math.min(
-														...shippingMethods
-															.filter(
-																(m) =>
-																	m.isFreeShipping &&
-																	m.minimumOrderAmount
-															)
-															.map((m) => parseFloat(m.minimumOrderAmount!))
-													).toFixed(2)}{" "}
-													KM. Trenutna vrijednost korpe: {subtotal.toFixed(2)} KM
-												</p>
-											)}
-										</div>
-									) : (
-										<form.Field
-											name="shippingMethodId"
-											validators={{
-												onChange: ({ value }) => {
-													const result =
-														checkoutSchema.shape.shippingMethodId.safeParse(
-															value
-														);
-													return result.success
-														? undefined
-														: result.error.errors[0]?.message;
-												},
-											}}
-										>
-											{(field) => (
-												<div className="space-y-2">
-													<div className="space-y-3">
+										) : (
+											<form.Field name="shippingMethodId">
+												{(field) => (
+													<div className="space-y-2">
 														{availableShippingMethods.map((method) => {
 															const methodPrice = parseFloat(
 																method.price || "0"
@@ -885,22 +1029,56 @@ function CheckoutPage() {
 																method.isFreeShipping &&
 																subtotal >= minimumAmount;
 															const displayPrice = isFree ? 0 : methodPrice;
-															const isSelected = field.state.value === method.id;
+															const isSelected =
+																field.state.value === method.id;
 
 															return (
 																<label
 																	key={method.id}
-																	htmlFor={method.id}
 																	className={cn(
-																		"flex items-start space-x-3 p-4 border rounded-md cursor-pointer transition-colors",
+																		"flex items-center justify-between p-4 border rounded-lg cursor-pointer transition-all",
 																		isSelected
-																			? "border-primary bg-primary/5"
+																			? "border-gray-900 bg-gray-50"
 																			: "border-gray-200 hover:border-gray-300"
 																	)}
 																>
+																	<div className="flex items-center gap-3">
+																		<div
+																			className={cn(
+																				"size-5 rounded-full border-2 flex items-center justify-center",
+																				isSelected
+																					? "border-gray-900 bg-gray-900"
+																					: "border-gray-300"
+																			)}
+																		>
+																			{isSelected && (
+																				<Check className="size-3 text-white" />
+																			)}
+																		</div>
+																		<div>
+																			<div className="font-medium text-gray-900 text-sm">
+																				{method.name}
+																			</div>
+																			{method.description && (
+																				<div className="text-xs text-gray-500 mt-0.5">
+																					{method.description}
+																				</div>
+																			)}
+																		</div>
+																	</div>
+																	<div className="text-right">
+																		{isFree ? (
+																			<span className="font-semibold text-emerald-600 text-sm">
+																				Besplatno
+																			</span>
+																		) : (
+																			<span className="font-semibold text-gray-900 text-sm">
+																				{displayPrice.toFixed(2)} KM
+																			</span>
+																		)}
+																	</div>
 																	<input
 																		type="radio"
-																		id={method.id}
 																		name="shippingMethod"
 																		value={method.id}
 																		checked={isSelected}
@@ -910,170 +1088,295 @@ function CheckoutPage() {
 																				e.target.value
 																			);
 																		}}
-																		className="mt-1 size-4 text-primary focus:ring-primary"
+																		className="sr-only"
 																	/>
-																	<div className="flex-1">
-																		<div className="flex items-center justify-between">
-																			<div>
-																				<div className="font-medium text-gray-900">
-																					{method.name}
-																				</div>
-																				{method.description && (
-																					<div className="text-sm text-gray-600 mt-1">
-																						{method.description}
-																					</div>
-																				)}
-																				{method.isFreeShipping &&
-																					minimumAmount > 0 && (
-																						<div className="text-xs text-gray-500 mt-1">
-																							Besplatna dostava za narudžbe
-																							preko {minimumAmount.toFixed(2)} KM
-																						</div>
-																					)}
-																			</div>
-																			<div className="text-right ml-4">
-																				{isFree ? (
-																					<span className="font-semibold text-green-600">
-																						Besplatno
-																					</span>
-																				) : (
-																					<span className="font-semibold text-gray-900">
-																						{displayPrice.toFixed(2)} KM
-																					</span>
-																				)}
-																			</div>
-																		</div>
-																	</div>
 																</label>
 															);
 														})}
 													</div>
-													{field.state.meta.errors.length > 0 && (
-														<p className="text-sm text-red-500">
-															{field.state.meta.errors[0]}
-														</p>
-													)}
-												</div>
-											)}
-										</form.Field>
-									)}
-								</div>
+												)}
+											</form.Field>
+										)}
+									</section>
 
-								{/* Payment Method */}
-								<div className="bg-white p-6 rounded-lg border border-gray-200">
-									<h2 className="text-xl font-semibold text-gray-900 mb-4">
-										Način plaćanja
-									</h2>
-									<div className="p-4 border border-gray-200 rounded-md bg-gray-50">
-										<div className="flex items-center justify-between">
-											<div>
-												<div className="font-medium text-gray-900">
-													Plaćanje pouzećem
+									{/* Payment Method */}
+									<section className="bg-white rounded-xl p-6 shadow-sm">
+										<h2 className="text-base font-semibold text-gray-900 mb-5 flex items-center gap-2">
+											<div className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center">
+												4
+											</div>
+											<CreditCard className="size-4" />
+											Plaćanje
+										</h2>
+
+										<div className="p-4 border border-gray-900 rounded-lg bg-gray-50">
+											<div className="flex items-center gap-3">
+												<div className="size-5 rounded-full border-2 border-gray-900 bg-gray-900 flex items-center justify-center">
+													<Check className="size-3 text-white" />
 												</div>
-												<div className="text-sm text-gray-600 mt-1">
-													Plaćanje prilikom preuzimanja
+												<div>
+													<div className="font-medium text-gray-900 text-sm">
+														Plaćanje pouzećem
+													</div>
+													<div className="text-xs text-gray-500 mt-0.5">
+														Platite prilikom preuzimanja paketa
+													</div>
 												</div>
 											</div>
 										</div>
+									</section>
+
+									{/* Submit Button */}
+									<div>
+										<form.Subscribe
+											selector={(state) => [
+												state.isSubmitting,
+												state.canSubmit,
+											]}
+										>
+											{([formIsSubmitting, canSubmit]) => (
+												<Button
+													type="submit"
+													size="lg"
+													disabled={
+														formIsSubmitting || !canSubmit || isSubmitting
+													}
+													className="w-full h-12 text-base font-medium"
+												>
+													{formIsSubmitting || isSubmitting ? (
+														<>
+															<Loader2 className="size-5 mr-2 animate-spin" />
+															Procesiranje...
+														</>
+													) : (
+														`Potvrdi narudžbu - ${total.toFixed(2)} KM`
+													)}
+												</Button>
+											)}
+										</form.Subscribe>
+									</div>
+								</form>
+							</div>
+
+							{/* Order Summary - Desktop */}
+							<div className="hidden lg:block lg:col-span-5">
+								<div className="bg-white rounded-xl p-6 shadow-sm sticky top-24">
+									<h2 className="text-base font-semibold text-gray-900 mb-5">
+										Pregled narudžbe ({itemCount})
+									</h2>
+
+									{/* Items */}
+									<div className="space-y-4 mb-6">
+										{items.map((item) => {
+											const price = parseFloat(
+												item.variant?.price || item.product?.price || "0"
+											);
+											const variantLabel =
+												item.variantOptions &&
+												item.variantOptions.length > 0
+													? item.variantOptions
+															.map((opt) => opt.optionValue)
+															.join(" / ")
+													: null;
+
+											return (
+												<div
+													key={item.id}
+													className="flex gap-3"
+												>
+													<div className="relative w-16 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
+														{item.image ? (
+															<img
+																src={item.image}
+																alt={item.product?.name || "Product"}
+																className="w-full h-full object-cover"
+															/>
+														) : (
+															<div className="w-full h-full flex items-center justify-center">
+																<ShoppingBag className="size-5 text-gray-300" />
+															</div>
+														)}
+														<span className="absolute -top-1 -right-1 w-5 h-5 bg-gray-900 text-white text-xs rounded-full flex items-center justify-center">
+															{item.quantity}
+														</span>
+													</div>
+													<div className="flex-1 min-w-0">
+														<div className="font-medium text-gray-900 text-sm line-clamp-2">
+															{item.product?.name || "Proizvod"}
+														</div>
+														{variantLabel && (
+															<div className="text-xs text-gray-500 mt-0.5">
+																{variantLabel}
+															</div>
+														)}
+														<div className="text-sm font-semibold text-gray-900 mt-1">
+															{(price * item.quantity).toFixed(2)} KM
+														</div>
+													</div>
+												</div>
+											);
+										})}
+									</div>
+
+									{/* Discount Code */}
+									<div className="border-t border-gray-100 pt-4 mb-4">
+										<div className="flex items-center gap-2 mb-2">
+											<Tag className="size-4 text-gray-500" />
+											<span className="text-sm font-medium text-gray-700">
+												Kod za popust
+											</span>
+										</div>
+										{appliedDiscount ? (
+											<div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
+												<div className="flex items-center gap-2">
+													<Check className="size-4 text-emerald-600" />
+													<span className="text-sm font-medium text-emerald-700">
+														{appliedDiscount.code}
+													</span>
+												</div>
+												<button
+													type="button"
+													onClick={removeDiscount}
+													className="text-gray-500 hover:text-gray-700"
+												>
+													<X className="size-4" />
+												</button>
+											</div>
+										) : (
+											<div className="flex gap-2">
+												<Input
+													value={discountCode}
+													onChange={(e) => setDiscountCode(e.target.value)}
+													placeholder="Unesite kod"
+													className={cn(
+														"h-10 flex-1",
+														discountError && "border-red-500"
+													)}
+												/>
+												<Button
+													type="button"
+													variant="outline"
+													onClick={handleApplyDiscount}
+													className="h-10 px-4"
+												>
+													Primjeni
+												</Button>
+											</div>
+										)}
+										{discountError && (
+											<p className="text-xs text-red-500 mt-1">
+												{discountError}
+											</p>
+										)}
+									</div>
+
+									{/* Totals */}
+									<div className="border-t border-gray-100 pt-4 space-y-2">
+										<div className="flex justify-between text-sm">
+											<span className="text-gray-600">Međuzbir</span>
+											<span className="text-gray-900">
+												{subtotal.toFixed(2)} KM
+											</span>
+										</div>
+										<div className="flex justify-between text-sm">
+											<span className="text-gray-600">Dostava</span>
+											<span className="text-gray-900">
+												{shippingCost === 0 ? (
+													<span className="text-emerald-600 font-medium">
+														Besplatno
+													</span>
+												) : (
+													`${shippingCost.toFixed(2)} KM`
+												)}
+											</span>
+										</div>
+										{appliedDiscount && (
+											<div className="flex justify-between text-sm">
+												<span className="text-gray-600">Popust</span>
+												<span className="text-emerald-600 font-medium">
+													-{discountAmount.toFixed(2)} KM
+												</span>
+											</div>
+										)}
+										<div className="flex justify-between text-lg font-semibold pt-3 border-t border-gray-100">
+											<span className="text-gray-900">Ukupno</span>
+											<span className="text-gray-900">
+												{total.toFixed(2)} KM
+											</span>
+										</div>
 									</div>
 								</div>
-
-								{/* Submit Button */}
-								<div className="flex gap-4">
-									<Button
-										type="button"
-										variant="outline"
-										onClick={() => navigate({ to: "/products" })}
-									>
-										Nazad
-									</Button>
-									<form.Subscribe
-										selector={(state) => [
-											state.isSubmitting,
-											state.canSubmit,
-										]}
-										children={([formIsSubmitting, canSubmit]) => (
-											<Button
-												type="submit"
-												size="lg"
-												disabled={formIsSubmitting || !canSubmit || isSubmitting}
-												className="flex-1"
-											>
-												{formIsSubmitting || isSubmitting ? (
-													<>
-														<Loader2 className="size-4 mr-2 animate-spin" />
-														Procesiranje...
-													</>
-												) : (
-													`Naruči i plati ${total.toFixed(2)} KM`
-												)}
-											</Button>
-										)}
-									/>
-								</div>
-							</form>
+							</div>
 						</div>
+					</div>
+				</div>
 
-						{/* Order Summary */}
-						<div className="lg:col-span-1">
-							<div className="bg-white p-6 rounded-lg border border-gray-200 sticky top-20">
-								<h2 className="text-xl font-semibold text-gray-900 mb-4">
-									Pregled narudžbe
-								</h2>
-
+				{/* Mobile Order Summary */}
+				<div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40">
+					{/* Collapsible Summary */}
+					{showOrderSummary && (
+						<div className="border-b border-gray-100 max-h-[50vh] overflow-y-auto">
+							<div className="p-4 space-y-4">
 								{/* Items */}
-								<div className="space-y-3 mb-4">
-									{items.map((item) => {
-										const price = parseFloat(
-											item.variant?.price || item.product?.price || "0"
-										);
-										const itemTotal = price * item.quantity;
+								{items.map((item) => {
+									const price = parseFloat(
+										item.variant?.price || item.product?.price || "0"
+									);
+									const variantLabel =
+										item.variantOptions && item.variantOptions.length > 0
+											? item.variantOptions
+													.map((opt) => opt.optionValue)
+													.join(" / ")
+											: null;
 
-										return (
-											<div
-												key={item.id}
-												className="flex items-start gap-3 text-sm"
-											>
-												<div className="relative w-12 h-12 flex-shrink-0 rounded-md overflow-hidden bg-gray-100">
-													{item.image ? (
-														<img
-															src={item.image}
-															alt={item.product?.name || "Product"}
-															className="w-full h-full object-cover"
-														/>
-													) : (
-														<div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
-															Slika
-														</div>
-													)}
-												</div>
-												<div className="flex-1 min-w-0">
-													<div className="font-medium text-gray-900 line-clamp-2">
-														{item.product?.name || "Proizvod"}
+									return (
+										<div key={item.id} className="flex gap-3">
+											<div className="relative w-12 h-15 flex-shrink-0 rounded-md overflow-hidden bg-gray-100">
+												{item.image ? (
+													<img
+														src={item.image}
+														alt={item.product?.name || "Product"}
+														className="w-full h-full object-cover"
+													/>
+												) : (
+													<div className="w-full h-full flex items-center justify-center">
+														<ShoppingBag className="size-4 text-gray-300" />
 													</div>
-													<div className="text-gray-600">
-														Količina: {item.quantity}
-													</div>
-												</div>
-												<div className="text-gray-900 font-medium">
-													{itemTotal.toFixed(2)} KM
-												</div>
+												)}
+												<span className="absolute -top-1 -right-1 w-4 h-4 bg-gray-900 text-white text-[10px] rounded-full flex items-center justify-center">
+													{item.quantity}
+												</span>
 											</div>
-										);
-									})}
-								</div>
+											<div className="flex-1 min-w-0">
+												<div className="font-medium text-gray-900 text-xs line-clamp-1">
+													{item.product?.name || "Proizvod"}
+												</div>
+												{variantLabel && (
+													<div className="text-xs text-gray-500">
+														{variantLabel}
+													</div>
+												)}
+											</div>
+											<div className="text-xs font-semibold text-gray-900">
+												{(price * item.quantity).toFixed(2)} KM
+											</div>
+										</div>
+									);
+								})}
 
 								{/* Totals */}
-								<div className="border-t border-gray-200 pt-4 space-y-2">
+								<div className="pt-3 border-t border-gray-100 space-y-1">
 									<div className="flex justify-between text-sm">
 										<span className="text-gray-600">Međuzbir</span>
-										<span className="text-gray-900">{subtotal.toFixed(2)} KM</span>
+										<span className="text-gray-900">
+											{subtotal.toFixed(2)} KM
+										</span>
 									</div>
 									<div className="flex justify-between text-sm">
 										<span className="text-gray-600">Dostava</span>
 										<span className="text-gray-900">
 											{shippingCost === 0 ? (
-												<span className="text-green-600 font-semibold">
+												<span className="text-emerald-600 font-medium">
 													Besplatno
 												</span>
 											) : (
@@ -1081,26 +1384,49 @@ function CheckoutPage() {
 											)}
 										</span>
 									</div>
-									<div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-200">
-										<span>Ukupno</span>
-										<span>{total.toFixed(2)} KM</span>
-									</div>
+									{appliedDiscount && (
+										<div className="flex justify-between text-sm">
+											<span className="text-gray-600">Popust</span>
+											<span className="text-emerald-600 font-medium">
+												-{discountAmount.toFixed(2)} KM
+											</span>
+										</div>
+									)}
 								</div>
 							</div>
 						</div>
+					)}
+
+					{/* Fixed Bottom Bar */}
+					<div className="px-4 py-3 safe-area-bottom">
+						{/* Toggle Summary */}
+						<button
+							type="button"
+							onClick={() => setShowOrderSummary(!showOrderSummary)}
+							className="flex items-center justify-between w-full"
+						>
+							<div className="flex items-center gap-2">
+								<ShoppingBag className="size-4 text-gray-500" />
+								<span className="text-sm font-medium text-gray-700">
+									{showOrderSummary ? "Sakrij" : "Prikaži"} narudžbu ({itemCount})
+								</span>
+								<ChevronDown
+									className={cn(
+										"size-4 text-gray-500 transition-transform",
+										showOrderSummary && "rotate-180"
+									)}
+								/>
+							</div>
+							<span className="text-lg font-semibold text-gray-900">
+								{total.toFixed(2)} KM
+							</span>
+						</button>
 					</div>
 				</div>
+
+				{/* Bottom padding for mobile sticky bar */}
+				<div className="h-40 lg:hidden" />
 			</main>
-			<footer className="bg-gray-900 text-white mt-16">
-				<div className="container mx-auto px-4 py-12">
-					<div className="text-center text-sm text-gray-400">
-						<p>
-							&copy; {new Date().getFullYear()} Lunatik. Sva prava zadržana.
-						</p>
-					</div>
-				</div>
-			</footer>
-		</div>
+		</ShopLayout>
 	);
 }
-

@@ -120,11 +120,12 @@ export const getCartServerFn = createServerFn({ method: "POST" })
 			orderBy: { createdAt: "asc" },
 		});
 
-		// Get images and inventory for each item
+		// Get images, inventory, and variant options for each item
 		const itemsWithDetails = await Promise.all(
 			items.map(async (item) => {
 				let imageUrl: string | null = null;
 				let inventoryData: Inventory | null = null;
+				let variantOptions: { optionName: string; optionValue: string }[] = [];
 
 				// Try to get variant image first, then product image
 				if (item.variant?.id) {
@@ -144,6 +145,23 @@ export const getCartServerFn = createServerFn({ method: "POST" })
 					inventoryData = await db.inventory.findUnique({
 						where: { variantId: item.variant.id },
 					});
+
+					// Get variant options (Size, Color, etc.)
+					const variantOptionsRows = await db.productVariantOption.findMany({
+						where: { variantId: item.variant.id },
+						include: {
+							optionValue: {
+								include: {
+									option: true,
+								},
+							},
+						},
+					});
+
+					variantOptions = variantOptionsRows.map((vo) => ({
+						optionName: vo.optionValue?.option?.name || "",
+						optionValue: vo.optionValue?.name || "",
+					}));
 				}
 
 				// Fallback to product image
@@ -165,6 +183,7 @@ export const getCartServerFn = createServerFn({ method: "POST" })
 					...item,
 					image: imageUrl,
 					inventory: inventoryData,
+					variantOptions,
 				};
 			})
 		);

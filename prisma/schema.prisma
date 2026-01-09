@@ -476,6 +476,7 @@ model Order {
   note              String?   @db.Text
   cancelledAt       DateTime? @map("cancelled_at") @db.Timestamp(3)
   cancelledReason   String?   @map("cancelled_reason") @db.Text
+  trackingNumber    String?   @map("tracking_number") @db.VarChar(255)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 

@@ -6,7 +6,6 @@ import {
 	FolderKanban,
 	Frame,
 	Inbox,
-	LucideBookImage,
 	Map,
 	Percent,
 	PieChart,
@@ -93,9 +92,8 @@ const data = {
 		},
 		{
 			title: "Shop",
-			url: "/admin/navigation",
-			icon: LucideBookImage,
-			items: [],
+			url: "/admin/shop",
+			icon: Store,
 		},
 	],
 	navSecondary: [

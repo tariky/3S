@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getUserOrdersQueryOptions } from "@/queries/orders";
-import { ShopNavigation } from "@/components/shop/ShopNavigation";
+import { ShopLayout } from "@/components/shop/ShopLayout";
+import { getPublicShopSettingsServerFn } from "@/queries/settings";
+import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { Button } from "@/components/ui/button";
 import { Loader2, Package, Calendar, DollarSign } from "lucide-react";
 import { useState } from "react";
@@ -9,18 +11,24 @@ import { useState } from "react";
 export const Route = createFileRoute("/account/orders")({
 	component: OrdersPage,
 	loader: async ({ context }) => {
-		await context.queryClient.ensureQueryData(
-			getUserOrdersQueryOptions({
-				page: 1,
-				limit: 10,
-			})
-		);
+		const [settings, navigationItems] = await Promise.all([
+			getPublicShopSettingsServerFn(),
+			getPublicNavigationServerFn(),
+			context.queryClient.ensureQueryData(
+				getUserOrdersQueryOptions({
+					page: 1,
+					limit: 10,
+				})
+			),
+		]);
+		return { settings, navigationItems };
 	},
 });
 
 const LIMIT = 10;
 
 function OrdersPage() {
+	const { settings, navigationItems } = Route.useLoaderData();
 	const [page, setPage] = useState(1);
 
 	const { data, isLoading } = useQuery(
@@ -62,8 +70,7 @@ function OrdersPage() {
 	};
 
 	return (
-		<div className="min-h-screen bg-gray-50">
-			<ShopNavigation />
+		<ShopLayout settings={settings} navigationItems={navigationItems}>
 			<main className="container mx-auto px-4 py-8">
 				<div className="max-w-4xl mx-auto">
 					<div className="mb-8">
@@ -158,7 +165,7 @@ function OrdersPage() {
 					)}
 				</div>
 			</main>
-		</div>
+		</ShopLayout>
 	);
 }
 

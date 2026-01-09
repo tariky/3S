@@ -1,46 +1,144 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ShopNavigation } from "@/components/shop/ShopNavigation";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { ShopLayout } from "@/components/shop/ShopLayout";
+import { getPublicShopSettingsServerFn } from "@/queries/settings";
+import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getShopProductBySlugQueryOptions } from "@/queries/shop-products";
+import {
+	getShopProductBySlugQueryOptions,
+	getShopProductBySlugServerFn,
+	type ShopProduct,
+} from "@/queries/shop-products";
 import { addToCartMutationOptions, CART_QUERY_KEY } from "@/queries/cart";
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, ChevronLeft, ChevronRight, ShoppingCart } from "lucide-react";
+import { Loader2, ShoppingCart, ChevronRight, Home, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCartSession } from "@/hooks/useCartSession";
+import { ProductImageCarousel } from "@/components/shop/ProductImageCarousel";
+import { ProductInfoAccordion } from "@/components/shop/ProductInfoAccordion";
+import { QuantityPicker } from "@/components/shop/QuantityPicker";
+import { MobileStickyCart } from "@/components/shop/MobileStickyCart";
 
 export const Route = createFileRoute("/product/$slug")({
 	component: ProductDetailPage,
 	loader: async ({ params }) => {
-		// Prefetch the product data
-		return {};
+		const [settings, navigationItems, product] = await Promise.all([
+			getPublicShopSettingsServerFn(),
+			getPublicNavigationServerFn(),
+			getShopProductBySlugServerFn({ data: { slug: params.slug } }).catch(
+				() => null
+			),
+		]);
+
+		if (!product) {
+			throw notFound();
+		}
+
+		return { settings, navigationItems, product };
+	},
+	head: ({ loaderData }) => {
+		const product = loaderData?.product as ShopProduct | undefined;
+		const shopTitle =
+			(loaderData?.settings as { shopTitle?: string } | undefined)?.shopTitle ||
+			"Shop";
+
+		if (!product) {
+			return {
+				meta: [{ title: `Proizvod nije pronađen | ${shopTitle}` }],
+			};
+		}
+
+		const title = `${product.name} | ${shopTitle}`;
+		const description =
+			product.description?.slice(0, 160) ||
+			`Kupite ${product.name} po najboljoj cijeni.`;
+		const image = product.media?.[0]?.media?.url;
+
+		return {
+			meta: [
+				{ title },
+				{ name: "description", content: description },
+				// Open Graph
+				{ property: "og:title", content: product.name },
+				{ property: "og:description", content: description },
+				{ property: "og:type", content: "product" },
+				...(image ? [{ property: "og:image", content: image }] : []),
+				// Twitter
+				{ name: "twitter:card", content: "summary_large_image" },
+				{ name: "twitter:title", content: product.name },
+				{ name: "twitter:description", content: description },
+				...(image ? [{ name: "twitter:image", content: image }] : []),
+			],
+		};
+	},
+	notFoundComponent: () => {
+		return (
+			<div className="container mx-auto px-4 py-12">
+				<div className="text-center">
+					<h1 className="text-2xl font-medium text-gray-900 mb-4">
+						Proizvod nije pronađen
+					</h1>
+					<p className="text-gray-600 mb-6">
+						Proizvod koji tražite ne postoji ili je uklonjen.
+					</p>
+					<Button asChild variant="outline">
+						<Link to="/products" search={{ tags: undefined }}>
+							Nazad na proizvode
+						</Link>
+					</Button>
+				</div>
+			</div>
+		);
 	},
 });
 
 function ProductDetailPage() {
 	const { slug } = Route.useParams();
+	const { settings, navigationItems, product: initialProduct } =
+		Route.useLoaderData();
 	const { sessionId } = useCartSession();
 	const queryClient = useQueryClient();
-	const { data: product, isLoading, error } = useQuery(
-		getShopProductBySlugQueryOptions(slug)
-	);
-	const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-	const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
+
+	// Use SSR data as initial data, allow client-side refetches
+	const { data: product } = useQuery({
+		...getShopProductBySlugQueryOptions(slug),
+		initialData: initialProduct as ShopProduct,
+		staleTime: 1000 * 60 * 5, // 5 minutes
+	});
+
 	const [selectedOptions, setSelectedOptions] = useState<
 		Record<string, string>
 	>({});
+	const [quantity, setQuantity] = useState(1);
+	const [showAddedFeedback, setShowAddedFeedback] = useState(false);
 	const addToCartMutation = useMutation(
 		addToCartMutationOptions(sessionId || undefined)
 	);
 
+	// Reset feedback after 1.5 seconds
+	useEffect(() => {
+		if (showAddedFeedback) {
+			const timer = setTimeout(() => {
+				setShowAddedFeedback(false);
+			}, 1500);
+			return () => clearTimeout(timer);
+		}
+	}, [showAddedFeedback]);
+
 	// Get images from media
-	const images =
-		product?.media
-			?.map((item) => item.media?.url)
-			.filter((url): url is string => !!url) || [];
+	const images = useMemo(() => {
+		return (
+			product?.media
+				?.map((item) => ({
+					url: item.media?.url || "",
+					alt: item.media?.alt || product.name,
+				}))
+				.filter((img) => !!img.url) || []
+		);
+	}, [product]);
 
 	// Determine selected variant based on selected options
-	const getSelectedVariant = () => {
+	const currentVariant = useMemo(() => {
 		if (!product?.variants || product.variants.length === 0) {
 			return null;
 		}
@@ -71,9 +169,8 @@ function ProductDetailPage() {
 				});
 			}) || null
 		);
-	};
+	}, [product, selectedOptions]);
 
-	const currentVariant = getSelectedVariant();
 	const displayPrice = currentVariant?.price || product?.price || "0";
 	const displayComparePrice =
 		currentVariant?.compareAtPrice || product?.compareAtPrice;
@@ -84,8 +181,7 @@ function ProductDetailPage() {
 	const hasDiscount = comparePriceNum && comparePriceNum > priceNum;
 
 	// Get available inventory
-	const availableQuantity =
-		currentVariant?.inventory?.available || 0;
+	const availableQuantity = currentVariant?.inventory?.available || 0;
 	const isInStock = availableQuantity > 0;
 
 	const handleOptionChange = (optionId: string, valueId: string) => {
@@ -93,214 +189,156 @@ function ProductDetailPage() {
 			...prev,
 			[optionId]: valueId,
 		}));
+		// Reset quantity when variant changes
+		setQuantity(1);
 	};
 
 	const handleAddToCart = async () => {
 		if (!product || !currentVariant) return;
+
+		// Validate quantity against stock
+		if (quantity > availableQuantity) {
+			alert(`Maksimalno ${availableQuantity} kom. na zalihi`);
+			return;
+		}
+
 		try {
 			await addToCartMutation.mutateAsync({
 				productId: product.id,
 				variantId: currentVariant.id,
-				quantity: 1,
+				quantity,
 			});
 			queryClient.invalidateQueries({ queryKey: [CART_QUERY_KEY] });
-		} catch (error: any) {
-			if (error?.message) {
-				alert(error.message);
+			setShowAddedFeedback(true);
+		} catch (error: unknown) {
+			const err = error as { message?: string };
+			if (err?.message) {
+				alert(err.message);
 			} else {
 				console.error("Error adding to cart:", error);
 			}
 		}
 	};
 
-	const nextImage = () => {
-		setSelectedImageIndex((prev) => (prev + 1) % images.length);
-	};
-
-	const prevImage = () => {
-		setSelectedImageIndex((prev) => (prev - 1 + images.length) % images.length);
-	};
-
-	if (isLoading) {
-		return (
-			<div className="min-h-screen bg-gray-50">
-				<ShopNavigation />
-				<div className="container mx-auto px-4 py-12">
-					<div className="flex items-center justify-center">
-						<Loader2 className="size-8 animate-spin text-primary" />
-					</div>
-				</div>
-			</div>
-		);
-	}
-
-	if (error || !product) {
-		return (
-			<div className="min-h-screen bg-gray-50">
-				<ShopNavigation />
-				<div className="container mx-auto px-4 py-12">
-					<div className="text-center">
-						<h1 className="text-2xl font-bold text-gray-900 mb-4">
-							Proizvod nije pronađen
-						</h1>
-						<p className="text-gray-600 mb-6">
-							Proizvod koji tražite ne postoji ili je uklonjen.
-						</p>
-						<Button asChild>
-							<Link to="/products">Nazad na proizvode</Link>
-						</Button>
-					</div>
-				</div>
-			</div>
-		);
+	// Product should always be available from SSR
+	if (!product) {
+		return null;
 	}
 
 	return (
-		<div className="min-h-screen bg-gray-50">
-			<ShopNavigation />
-			<main className="container mx-auto px-4 py-8">
+		<ShopLayout settings={settings} navigationItems={navigationItems}>
+			<main className="container mx-auto px-4 py-6 lg:py-10">
+				{/* Breadcrumb */}
+				<nav className="mb-6 lg:mb-8" aria-label="Breadcrumb">
+					<ol className="flex items-center gap-1.5 text-sm">
+						<li>
+							<Link
+								to="/"
+								className="text-gray-500 hover:text-gray-900 transition-colors"
+							>
+								<Home className="size-4" />
+							</Link>
+						</li>
+						<ChevronRight className="size-4 text-gray-400" />
+						{product.category && (
+							<>
+								<li>
+									<Link
+										to="/products/$categorySlug"
+										params={{ categorySlug: product.category.slug }}
+										search={{ tags: undefined }}
+										className="text-gray-500 hover:text-gray-900 transition-colors"
+									>
+										{product.category.name}
+									</Link>
+								</li>
+								<ChevronRight className="size-4 text-gray-400" />
+							</>
+						)}
+						<li>
+							<span className="text-gray-900 font-medium truncate max-w-[200px] inline-block">
+								{product.name}
+							</span>
+						</li>
+					</ol>
+				</nav>
+
 				<div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
 					{/* Image Carousel */}
-					<div className="space-y-4">
-						{/* Main Image */}
-						<div className="relative aspect-square bg-white rounded-lg overflow-hidden border border-gray-200">
-							{images.length > 0 ? (
-								<>
-									<img
-										src={images[selectedImageIndex]}
-										alt={product.name}
-										className="w-full h-full object-cover"
-									/>
-									{/* Navigation Arrows */}
-									{images.length > 1 && (
-										<>
-											<button
-												onClick={prevImage}
-												className="absolute left-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white rounded-full p-2 shadow-lg transition-colors lg:hidden"
-												aria-label="Prethodna slika"
-											>
-												<ChevronLeft className="size-5" />
-											</button>
-											<button
-												onClick={nextImage}
-												className="absolute right-2 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white rounded-full p-2 shadow-lg transition-colors lg:hidden"
-												aria-label="Sljedeća slika"
-											>
-												<ChevronRight className="size-5" />
-											</button>
-										</>
-									)}
-									{/* Image Counter */}
-									{images.length > 1 && (
-										<div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/50 text-white text-xs px-3 py-1 rounded-full">
-											{selectedImageIndex + 1} / {images.length}
-										</div>
-									)}
-								</>
-							) : (
-								<div className="w-full h-full flex items-center justify-center text-gray-400">
-									<span>Nema slike</span>
-								</div>
-							)}
-						</div>
-
-						{/* Thumbnail Images - Desktop */}
-						{images.length > 1 && (
-							<div className="hidden lg:grid grid-cols-4 gap-2">
-								{images.map((image, index) => (
-									<button
-										key={index}
-										onClick={() => setSelectedImageIndex(index)}
-										className={cn(
-											"aspect-square rounded-md overflow-hidden border-2 transition-all",
-											selectedImageIndex === index
-												? "border-primary"
-												: "border-gray-200 hover:border-gray-300"
-										)}
-									>
-										<img
-											src={image}
-											alt={`${product.name} ${index + 1}`}
-											className="w-full h-full object-cover"
-										/>
-									</button>
-								))}
-							</div>
-						)}
-
-						{/* Thumbnail Images - Mobile (Horizontal Scroll) */}
-						{images.length > 1 && (
-							<div className="lg:hidden flex gap-2 overflow-x-auto pb-2 -mx-4 px-4">
-								{images.map((image, index) => (
-									<button
-										key={index}
-										onClick={() => setSelectedImageIndex(index)}
-										className={cn(
-											"flex-shrink-0 aspect-square w-20 rounded-md overflow-hidden border-2 transition-all",
-											selectedImageIndex === index
-												? "border-primary"
-												: "border-gray-200"
-										)}
-									>
-										<img
-											src={image}
-											alt={`${product.name} ${index + 1}`}
-											className="w-full h-full object-cover"
-										/>
-									</button>
-								))}
-							</div>
-						)}
+					<div className="lg:sticky lg:top-24 lg:self-start">
+						<ProductImageCarousel
+							images={images}
+							productName={product.name}
+						/>
 					</div>
 
 					{/* Product Info */}
 					<div className="space-y-6">
 						{/* Category */}
 						{product.category && (
-							<div className="text-sm text-gray-600">
+							<Link
+								to="/products/$categorySlug"
+								params={{ categorySlug: product.category.slug }}
+								search={{ tags: undefined }}
+								className="text-sm text-gray-500 hover:text-gray-700 transition-colors uppercase tracking-wide"
+							>
 								{product.category.name}
-							</div>
+							</Link>
 						)}
 
 						{/* Title */}
-						<h1 className="text-3xl lg:text-4xl font-bold text-gray-900">
+						<h1 className="text-2xl lg:text-3xl font-medium text-gray-900">
 							{product.name}
 						</h1>
 
-						{/* Price */}
-						<div className="flex items-center gap-3">
-							<span className="text-3xl font-bold text-gray-900">
+						{/* Price - Desktop */}
+						<div className="hidden lg:flex items-baseline gap-3">
+							<span className="text-2xl font-semibold text-gray-900">
 								{priceNum.toFixed(2)} KM
 							</span>
 							{hasDiscount && (
 								<>
-									<span className="text-xl text-gray-500 line-through">
+									<span className="text-lg text-gray-400 line-through">
 										{comparePriceNum!.toFixed(2)} KM
 									</span>
-									<span className="bg-red-500 text-white text-sm font-semibold px-2 py-1 rounded">
-										-{Math.round(
+									<span className="text-sm font-medium text-rose-600">
+										-
+										{Math.round(
 											((comparePriceNum! - priceNum) / comparePriceNum!) * 100
-										)}%
+										)}
+										%
 									</span>
 								</>
 							)}
 						</div>
 
-						{/* Description */}
-						{product.description && (
-							<div className="prose max-w-none">
-								<p className="text-gray-700 whitespace-pre-line">
-									{product.description}
-								</p>
-							</div>
-						)}
+						{/* Price - Mobile (shown since sticky bar takes over) */}
+						<div className="lg:hidden flex items-baseline gap-3">
+							<span className="text-xl font-semibold text-gray-900">
+								{priceNum.toFixed(2)} KM
+							</span>
+							{hasDiscount && (
+								<>
+									<span className="text-base text-gray-400 line-through">
+										{comparePriceNum!.toFixed(2)} KM
+									</span>
+									<span className="text-sm font-medium text-rose-600">
+										-
+										{Math.round(
+											((comparePriceNum! - priceNum) / comparePriceNum!) * 100
+										)}
+										%
+									</span>
+								</>
+							)}
+						</div>
 
 						{/* Variant Options */}
 						{product.options && product.options.length > 0 && (
-							<div className="space-y-4">
+							<div className="space-y-5">
 								{product.options.map((option) => (
 									<div key={option.id}>
-										<label className="block text-sm font-medium text-gray-900 mb-2">
+										<label className="block text-sm font-medium text-gray-900 mb-3">
 											{option.name}
 										</label>
 										<div className="flex flex-wrap gap-2">
@@ -314,10 +352,10 @@ function ProductDetailPage() {
 															handleOptionChange(option.id, value.id)
 														}
 														className={cn(
-															"px-4 py-2 rounded-md border-2 text-sm font-medium transition-all",
+															"px-4 py-2.5 rounded-md border text-sm font-medium transition-all",
 															isSelected
-																? "border-primary bg-primary text-primary-foreground"
-																: "border-gray-300 bg-white text-gray-900 hover:border-gray-400"
+																? "border-gray-900 bg-gray-900 text-white"
+																: "border-gray-200 bg-white text-gray-900 hover:border-gray-400"
 														)}
 													>
 														{value.name}
@@ -330,54 +368,109 @@ function ProductDetailPage() {
 							</div>
 						)}
 
-						{/* Stock Status */}
-						<div className="flex items-center gap-2">
-							{isInStock ? (
-								<>
-									<div className="size-3 bg-green-500 rounded-full" />
-									<span className="text-sm text-gray-700">
-										Na zalihi ({availableQuantity} kom)
+						{/* Quantity & Add to Cart - Desktop */}
+						<div className="hidden lg:block space-y-4">
+							{/* Quantity Picker */}
+							<div className="flex items-center gap-4">
+								<span className="text-sm font-medium text-gray-900">
+									Količina
+								</span>
+								<QuantityPicker
+									value={quantity}
+									onChange={setQuantity}
+									min={1}
+									max={availableQuantity || 1}
+									disabled={!isInStock || addToCartMutation.isPending}
+								/>
+								{isInStock && (
+									<span className="text-sm text-gray-500">
+										{availableQuantity} na zalihi
 									</span>
-								</>
-							) : (
-								<>
-									<div className="size-3 bg-red-500 rounded-full" />
-									<span className="text-sm text-gray-700">Nema na zalihi</span>
-								</>
-							)}
+								)}
+							</div>
+
+							{/* Add to Cart Button */}
+							<Button
+								size="lg"
+								className={cn(
+									"w-full h-12 text-base font-medium transition-all duration-300",
+									showAddedFeedback && "bg-emerald-500 hover:bg-emerald-500"
+								)}
+								disabled={
+									!isInStock || addToCartMutation.isPending || showAddedFeedback
+								}
+								onClick={handleAddToCart}
+							>
+								{addToCartMutation.isPending ? (
+									<Loader2 className="size-5 animate-spin" />
+								) : showAddedFeedback ? (
+									<span className="flex items-center gap-2 animate-success-pop">
+										<Check className="size-5" />
+										Dodano u korpu
+									</span>
+								) : (
+									<>
+										<ShoppingCart className="size-5 mr-2" />
+										{isInStock ? "Dodaj u korpu" : "Nema na zalihi"}
+									</>
+								)}
+							</Button>
 						</div>
 
-						{/* Add to Cart Button */}
-						<Button
-							size="lg"
-							className="w-full"
-							disabled={!isInStock || addToCartMutation.isPending}
-							onClick={handleAddToCart}
-						>
-							<ShoppingCart className="size-5 mr-2" />
-							{addToCartMutation.isPending
-								? "Dodavanje..."
-								: isInStock
-									? "Dodaj u korpu"
-									: "Nema na zalihi"}
-						</Button>
+						{/* Stock Status Indicator */}
+						{!isInStock && (
+							<div className="flex items-center gap-2 text-sm text-gray-500">
+								<div className="size-2 bg-gray-400 rounded-full" />
+								<span>Trenutno nije dostupno</span>
+							</div>
+						)}
 
-						{/* Additional Info */}
+						{/* Info Accordion */}
+						<ProductInfoAccordion
+							shippingInfo={settings.productShippingInfo}
+							paymentInfo={settings.productPaymentInfo}
+							material={product.material}
+						/>
+
+						{/* SKU */}
 						{product.sku && (
-							<div className="text-sm text-gray-600">
-								<span className="font-medium">SKU:</span> {product.sku}
+							<div className="text-sm text-gray-400 pt-2">
+								SKU: {product.sku}
 							</div>
 						)}
 					</div>
 				</div>
-			</main>
-			<footer className="bg-gray-900 text-white mt-16">
-				<div className="container mx-auto px-4 py-12">
-					<div className="text-center text-sm text-gray-400">
-						<p>&copy; {new Date().getFullYear()} Lunatik. Sva prava zadržana.</p>
+
+				{/* Description - Full Width Below */}
+				{product.description && (
+					<div className="mt-12 lg:mt-16 pt-8 border-t border-gray-200">
+						<h2 className="text-lg font-medium text-gray-900 mb-4">
+							Opis proizvoda
+						</h2>
+						<div className="prose prose-gray max-w-none">
+							<p className="text-gray-600 whitespace-pre-line leading-relaxed">
+								{product.description}
+							</p>
+						</div>
 					</div>
-				</div>
-			</footer>
-		</div>
+				)}
+
+				{/* Bottom padding for mobile sticky bar */}
+				<div className="h-20 lg:hidden" />
+			</main>
+
+			{/* Mobile Sticky Cart Bar */}
+			<MobileStickyCart
+				price={priceNum}
+				compareAtPrice={comparePriceNum}
+				quantity={quantity}
+				onQuantityChange={setQuantity}
+				maxQuantity={availableQuantity}
+				onAddToCart={handleAddToCart}
+				isAddingToCart={addToCartMutation.isPending}
+				disabled={!isInStock}
+				showAddedFeedback={showAddedFeedback}
+			/>
+		</ShopLayout>
 	);
 }

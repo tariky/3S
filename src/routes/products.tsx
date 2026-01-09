@@ -1,15 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ShopNavigation } from "@/components/shop/ShopNavigation";
+import { ShopLayout } from "@/components/shop/ShopLayout";
 import { ProductFilters } from "@/components/shop/ProductFilters";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { useQuery } from "@tanstack/react-query";
 import { getShopProductsQueryOptions } from "@/queries/shop-products";
+import { getPublicShopSettingsServerFn } from "@/queries/settings";
+import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/products")({
 	component: ProductsPage,
+	loader: async () => {
+		const [settings, navigationItems] = await Promise.all([
+			getPublicShopSettingsServerFn(),
+			getPublicNavigationServerFn(),
+		]);
+		return { settings, navigationItems };
+	},
 	validateSearch: (search: Record<string, unknown>) => {
 		return {
 			tags: search.tags
@@ -22,6 +31,7 @@ export const Route = createFileRoute("/products")({
 });
 
 function ProductsPage() {
+	const { settings, navigationItems } = Route.useLoaderData();
 	const { tags } = Route.useSearch();
 	const [search, setSearch] = useState("");
 	const [categoryId, setCategoryId] = useState("");
@@ -56,9 +66,8 @@ function ProductsPage() {
 	};
 
 	return (
-		<div className="min-h-screen bg-gray-50">
-			<ShopNavigation />
-			<main className="container mx-auto px-4 py-8">
+		<ShopLayout settings={settings} navigationItems={navigationItems}>
+			<div className="container mx-auto px-4 py-8">
 				<div className="flex flex-col md:flex-row gap-8">
 					{/* Filters Sidebar */}
 					<aside className="w-full md:w-64 shrink-0">
@@ -156,17 +165,7 @@ function ProductsPage() {
 						)}
 					</div>
 				</div>
-			</main>
-			<footer className="bg-gray-900 text-white mt-16">
-				<div className="container mx-auto px-4 py-12">
-					<div className="text-center text-sm text-gray-400">
-						<p>
-							&copy; {new Date().getFullYear()} Lunatik. Sva prava
-							zadržana.
-						</p>
-					</div>
-				</div>
-			</footer>
-		</div>
+			</div>
+		</ShopLayout>
 	);
 }

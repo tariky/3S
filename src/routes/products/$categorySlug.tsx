@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ShopNavigation } from "@/components/shop/ShopNavigation";
+import { ShopLayout } from "@/components/shop/ShopLayout";
+import { getPublicShopSettingsServerFn } from "@/queries/settings";
+import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { ProductFilters } from "@/components/shop/ProductFilters";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { useQuery } from "@tanstack/react-query";
@@ -19,11 +21,19 @@ export const Route = createFileRoute("/products/$categorySlug")({
 				: undefined,
 		};
 	},
+	loader: async ({ params }) => {
+		const [settings, navigationItems] = await Promise.all([
+			getPublicShopSettingsServerFn(),
+			getPublicNavigationServerFn(),
+		]);
+		return { settings, navigationItems };
+	},
 });
 
 function CategoryProductsPage() {
 	const { categorySlug } = Route.useParams();
 	const { tags } = Route.useSearch();
+	const { settings, navigationItems } = Route.useLoaderData();
 	const [search, setSearch] = useState("");
 	const [minPrice, setMinPrice] = useState("");
 	const [maxPrice, setMaxPrice] = useState("");
@@ -58,8 +68,7 @@ function CategoryProductsPage() {
 	};
 
 	return (
-		<div className="min-h-screen bg-gray-50">
-			<ShopNavigation />
+		<ShopLayout settings={settings} navigationItems={navigationItems}>
 			<main className="container mx-auto px-4 py-8">
 				<div className="flex flex-col md:flex-row gap-8">
 					{/* Filters Sidebar */}
@@ -161,14 +170,7 @@ function CategoryProductsPage() {
 					</div>
 				</div>
 			</main>
-			<footer className="bg-gray-900 text-white mt-16">
-				<div className="container mx-auto px-4 py-12">
-					<div className="text-center text-sm text-gray-400">
-						<p>&copy; {new Date().getFullYear()} Lunatik. Sva prava zadržana.</p>
-					</div>
-				</div>
-			</footer>
-		</div>
+		</ShopLayout>
 	);
 }
 

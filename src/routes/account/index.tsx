@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ShopNavigation } from "@/components/shop/ShopNavigation";
+import { ShopLayout } from "@/components/shop/ShopLayout";
+import { getPublicShopSettingsServerFn } from "@/queries/settings";
+import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { AddressManager } from "@/components/account/AddressManager";
 import { Button } from "@/components/ui/button";
 import { Package, MapPin, User } from "lucide-react";
@@ -7,13 +9,21 @@ import { ToastProvider } from "@/components/ui/toast";
 
 export const Route = createFileRoute("/account/")({
 	component: AccountPage,
+	loader: async () => {
+		const [settings, navigationItems] = await Promise.all([
+			getPublicShopSettingsServerFn(),
+			getPublicNavigationServerFn(),
+		]);
+		return { settings, navigationItems };
+	},
 });
 
 function AccountPage() {
+	const { settings, navigationItems } = Route.useLoaderData();
+
 	return (
 		<ToastProvider>
-			<div className="min-h-screen bg-gray-50">
-				<ShopNavigation />
+			<ShopLayout settings={settings} navigationItems={navigationItems}>
 				<main className="container mx-auto px-4 py-8">
 					<div className="max-w-4xl mx-auto">
 						<div className="mb-8">
@@ -66,7 +76,7 @@ function AccountPage() {
 						</div>
 					</div>
 				</main>
-			</div>
+			</ShopLayout>
 		</ToastProvider>
 	);
 }

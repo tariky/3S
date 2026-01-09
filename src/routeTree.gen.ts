@@ -20,9 +20,11 @@ import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as ProductsCategorySlugRouteImport } from './routes/products/$categorySlug'
 import { Route as ProductSlugRouteImport } from './routes/product/$slug'
+import { Route as CollectionSlugRouteImport } from './routes/collection/$slug'
 import { Route as AuthRegisterRouteImport } from './routes/auth/register'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as ApiUploadRouteImport } from './routes/api/upload'
+import { Route as AdminShopRouteImport } from './routes/admin/shop'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AccountOrdersRouteImport } from './routes/account/orders'
 import { Route as AdminProductsIndexRouteImport } from './routes/admin/products/index'
@@ -30,6 +32,7 @@ import { Route as AdminPagesIndexRouteImport } from './routes/admin/pages/index'
 import { Route as AdminOrdersIndexRouteImport } from './routes/admin/orders/index'
 import { Route as AdminCustomersIndexRouteImport } from './routes/admin/customers/index'
 import { Route as AdminCollectionsIndexRouteImport } from './routes/admin/collections/index'
+import { Route as ApiCronRegenerateCollectionsRouteImport } from './routes/api/cron/regenerate-collections'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AdminProductsVendorsRouteImport } from './routes/admin/products/vendors'
 import { Route as AdminProductsNewRouteImport } from './routes/admin/products/new'
@@ -100,6 +103,11 @@ const ProductSlugRoute = ProductSlugRouteImport.update({
   path: '/product/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CollectionSlugRoute = CollectionSlugRouteImport.update({
+  id: '/collection/$slug',
+  path: '/collection/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRegisterRoute = AuthRegisterRouteImport.update({
   id: '/auth/register',
   path: '/auth/register',
@@ -114,6 +122,11 @@ const ApiUploadRoute = ApiUploadRouteImport.update({
   id: '/api/upload',
   path: '/api/upload',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminShopRoute = AdminShopRouteImport.update({
+  id: '/shop',
+  path: '/shop',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminSettingsRoute = AdminSettingsRouteImport.update({
   id: '/settings',
@@ -150,6 +163,12 @@ const AdminCollectionsIndexRoute = AdminCollectionsIndexRouteImport.update({
   path: '/collections/',
   getParentRoute: () => AdminRoute,
 } as any)
+const ApiCronRegenerateCollectionsRoute =
+  ApiCronRegenerateCollectionsRouteImport.update({
+    id: '/api/cron/regenerate-collections',
+    path: '/api/cron/regenerate-collections',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -234,9 +253,11 @@ export interface FileRoutesByFullPath {
   '/thank-you': typeof ThankYouRoute
   '/account/orders': typeof AccountOrdersRouteWithChildren
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/shop': typeof AdminShopRoute
   '/api/upload': typeof ApiUploadRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/collection/$slug': typeof CollectionSlugRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$categorySlug': typeof ProductsCategorySlugRoute
   '/account/': typeof AccountIndexRoute
@@ -254,6 +275,7 @@ export interface FileRoutesByFullPath {
   '/admin/products/new': typeof AdminProductsNewRoute
   '/admin/products/vendors': typeof AdminProductsVendorsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/regenerate-collections': typeof ApiCronRegenerateCollectionsRoute
   '/admin/collections': typeof AdminCollectionsIndexRoute
   '/admin/customers': typeof AdminCustomersIndexRoute
   '/admin/orders': typeof AdminOrdersIndexRoute
@@ -269,9 +291,11 @@ export interface FileRoutesByTo {
   '/thank-you': typeof ThankYouRoute
   '/account/orders': typeof AccountOrdersRouteWithChildren
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/shop': typeof AdminShopRoute
   '/api/upload': typeof ApiUploadRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/collection/$slug': typeof CollectionSlugRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$categorySlug': typeof ProductsCategorySlugRoute
   '/account': typeof AccountIndexRoute
@@ -289,6 +313,7 @@ export interface FileRoutesByTo {
   '/admin/products/new': typeof AdminProductsNewRoute
   '/admin/products/vendors': typeof AdminProductsVendorsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/regenerate-collections': typeof ApiCronRegenerateCollectionsRoute
   '/admin/collections': typeof AdminCollectionsIndexRoute
   '/admin/customers': typeof AdminCustomersIndexRoute
   '/admin/orders': typeof AdminOrdersIndexRoute
@@ -307,9 +332,11 @@ export interface FileRoutesById {
   '/thank-you': typeof ThankYouRoute
   '/account/orders': typeof AccountOrdersRouteWithChildren
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/shop': typeof AdminShopRoute
   '/api/upload': typeof ApiUploadRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/collection/$slug': typeof CollectionSlugRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$categorySlug': typeof ProductsCategorySlugRoute
   '/account/': typeof AccountIndexRoute
@@ -327,6 +354,7 @@ export interface FileRoutesById {
   '/admin/products/new': typeof AdminProductsNewRoute
   '/admin/products/vendors': typeof AdminProductsVendorsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/regenerate-collections': typeof ApiCronRegenerateCollectionsRoute
   '/admin/collections/': typeof AdminCollectionsIndexRoute
   '/admin/customers/': typeof AdminCustomersIndexRoute
   '/admin/orders/': typeof AdminOrdersIndexRoute
@@ -346,9 +374,11 @@ export interface FileRouteTypes {
     | '/thank-you'
     | '/account/orders'
     | '/admin/settings'
+    | '/admin/shop'
     | '/api/upload'
     | '/auth/login'
     | '/auth/register'
+    | '/collection/$slug'
     | '/product/$slug'
     | '/products/$categorySlug'
     | '/account/'
@@ -366,6 +396,7 @@ export interface FileRouteTypes {
     | '/admin/products/new'
     | '/admin/products/vendors'
     | '/api/auth/$'
+    | '/api/cron/regenerate-collections'
     | '/admin/collections'
     | '/admin/customers'
     | '/admin/orders'
@@ -381,9 +412,11 @@ export interface FileRouteTypes {
     | '/thank-you'
     | '/account/orders'
     | '/admin/settings'
+    | '/admin/shop'
     | '/api/upload'
     | '/auth/login'
     | '/auth/register'
+    | '/collection/$slug'
     | '/product/$slug'
     | '/products/$categorySlug'
     | '/account'
@@ -401,6 +434,7 @@ export interface FileRouteTypes {
     | '/admin/products/new'
     | '/admin/products/vendors'
     | '/api/auth/$'
+    | '/api/cron/regenerate-collections'
     | '/admin/collections'
     | '/admin/customers'
     | '/admin/orders'
@@ -418,9 +452,11 @@ export interface FileRouteTypes {
     | '/thank-you'
     | '/account/orders'
     | '/admin/settings'
+    | '/admin/shop'
     | '/api/upload'
     | '/auth/login'
     | '/auth/register'
+    | '/collection/$slug'
     | '/product/$slug'
     | '/products/$categorySlug'
     | '/account/'
@@ -438,6 +474,7 @@ export interface FileRouteTypes {
     | '/admin/products/new'
     | '/admin/products/vendors'
     | '/api/auth/$'
+    | '/api/cron/regenerate-collections'
     | '/admin/collections/'
     | '/admin/customers/'
     | '/admin/orders/'
@@ -457,8 +494,10 @@ export interface RootRouteChildren {
   ApiUploadRoute: typeof ApiUploadRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
+  CollectionSlugRoute: typeof CollectionSlugRoute
   ProductSlugRoute: typeof ProductSlugRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiCronRegenerateCollectionsRoute: typeof ApiCronRegenerateCollectionsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -540,6 +579,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/collection/$slug': {
+      id: '/collection/$slug'
+      path: '/collection/$slug'
+      fullPath: '/collection/$slug'
+      preLoaderRoute: typeof CollectionSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/register': {
       id: '/auth/register'
       path: '/auth/register'
@@ -560,6 +606,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/upload'
       preLoaderRoute: typeof ApiUploadRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/shop': {
+      id: '/admin/shop'
+      path: '/shop'
+      fullPath: '/admin/shop'
+      preLoaderRoute: typeof AdminShopRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/settings': {
       id: '/admin/settings'
@@ -609,6 +662,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/collections'
       preLoaderRoute: typeof AdminCollectionsIndexRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/api/cron/regenerate-collections': {
+      id: '/api/cron/regenerate-collections'
+      path: '/api/cron/regenerate-collections'
+      fullPath: '/api/cron/regenerate-collections'
+      preLoaderRoute: typeof ApiCronRegenerateCollectionsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
       id: '/api/auth/$'
@@ -738,6 +798,7 @@ const AccountRouteWithChildren =
 
 interface AdminRouteChildren {
   AdminSettingsRoute: typeof AdminSettingsRoute
+  AdminShopRoute: typeof AdminShopRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminCollectionsCollectionIdRoute: typeof AdminCollectionsCollectionIdRoute
   AdminCollectionsNewRoute: typeof AdminCollectionsNewRoute
@@ -760,6 +821,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminSettingsRoute: AdminSettingsRoute,
+  AdminShopRoute: AdminShopRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminCollectionsCollectionIdRoute: AdminCollectionsCollectionIdRoute,
   AdminCollectionsNewRoute: AdminCollectionsNewRoute,
@@ -805,8 +867,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUploadRoute: ApiUploadRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthRegisterRoute: AuthRegisterRoute,
+  CollectionSlugRoute: CollectionSlugRoute,
   ProductSlugRoute: ProductSlugRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiCronRegenerateCollectionsRoute: ApiCronRegenerateCollectionsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

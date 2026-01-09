@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getUserOrderByIdQueryOptions } from "@/queries/orders";
-import { ShopNavigation } from "@/components/shop/ShopNavigation";
+import { ShopLayout } from "@/components/shop/ShopLayout";
+import { getPublicShopSettingsServerFn } from "@/queries/settings";
+import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { Button } from "@/components/ui/button";
 import {
 	Loader2,
@@ -15,14 +17,20 @@ import {
 export const Route = createFileRoute("/account/orders/$orderId")({
 	component: OrderDetailPage,
 	loader: async ({ context, params }) => {
-		await context.queryClient.ensureQueryData(
-			getUserOrderByIdQueryOptions(params.orderId)
-		);
+		const [settings, navigationItems] = await Promise.all([
+			getPublicShopSettingsServerFn(),
+			getPublicNavigationServerFn(),
+			context.queryClient.ensureQueryData(
+				getUserOrderByIdQueryOptions(params.orderId)
+			),
+		]);
+		return { settings, navigationItems };
 	},
 });
 
 function OrderDetailPage() {
 	const { orderId } = Route.useParams();
+	const { settings, navigationItems } = Route.useLoaderData();
 	const { data: order, isLoading } = useQuery(getUserOrderByIdQueryOptions(orderId));
 
 	const getStatusBadge = (status: string) => {
@@ -79,21 +87,19 @@ function OrderDetailPage() {
 
 	if (isLoading) {
 		return (
-			<div className="min-h-screen bg-gray-50">
-				<ShopNavigation />
+			<ShopLayout settings={settings} navigationItems={navigationItems}>
 				<main className="container mx-auto px-4 py-8">
 					<div className="flex items-center justify-center py-12">
 						<Loader2 className="size-8 animate-spin text-primary" />
 					</div>
 				</main>
-			</div>
+			</ShopLayout>
 		);
 	}
 
 	if (!order) {
 		return (
-			<div className="min-h-screen bg-gray-50">
-				<ShopNavigation />
+			<ShopLayout settings={settings} navigationItems={navigationItems}>
 				<main className="container mx-auto px-4 py-8">
 					<div className="text-center py-12">
 						<p className="text-gray-600">Narudžba nije pronađena.</p>
@@ -102,13 +108,12 @@ function OrderDetailPage() {
 						</Button>
 					</div>
 				</main>
-			</div>
+			</ShopLayout>
 		);
 	}
 
 	return (
-		<div className="min-h-screen bg-gray-50">
-			<ShopNavigation />
+		<ShopLayout settings={settings} navigationItems={navigationItems}>
 			<main className="container mx-auto px-4 py-8">
 				<div className="max-w-4xl mx-auto">
 					<Button variant="ghost" asChild className="mb-6">
@@ -294,7 +299,7 @@ function OrderDetailPage() {
 					</div>
 				</div>
 			</main>
-		</div>
+		</ShopLayout>
 	);
 }
 

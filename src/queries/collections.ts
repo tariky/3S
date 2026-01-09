@@ -901,3 +901,248 @@ export const regenerateCollectionProductsMutationOptions = () => {
     },
   });
 };
+
+// ============================================================================
+// PUBLIC COLLECTION FUNCTIONS (FOR STOREFRONT)
+// ============================================================================
+
+export const PUBLIC_COLLECTION_QUERY_KEY = "public-collection";
+
+export type PublicCollection = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  image: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+};
+
+export type PublicCollectionProduct = {
+  id: string;
+  name: string;
+  slug: string;
+  price: string;
+  compareAtPrice: string | null;
+  primaryImage: string | null;
+  variants: {
+    id: string;
+    options: { optionName: string; optionValue: string }[];
+    inventory: { available: number } | null;
+  }[];
+};
+
+// Get collection by slug (public, no auth)
+export const getPublicCollectionBySlugServerFn = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ slug: z.string() }))
+  .handler(async ({ data }): Promise<PublicCollection | null> => {
+    const collection = await db.collection.findFirst({
+      where: {
+        slug: data.slug,
+        active: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        image: true,
+        seoTitle: true,
+        seoDescription: true,
+      },
+    });
+
+    if (!collection) {
+      return null;
+    }
+
+    return collection;
+  });
+
+// Get collection products with cursor-based pagination (public, no auth)
+export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      collectionId: z.string(),
+      cursor: z.string().optional(), // Last product ID from previous page
+      limit: z.number().min(1).max(100).optional().default(24),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { collectionId, cursor, limit = 24 } = data;
+
+    // Get collection to check sort order
+    const collection = await db.collection.findFirst({
+      where: { id: collectionId, active: true },
+      select: { sortOrder: true },
+    });
+
+    if (!collection) {
+      return {
+        products: [],
+        nextCursor: null,
+        hasMore: false,
+      };
+    }
+
+    // Determine order based on collection's sortOrder setting
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let orderBy: any;
+
+    switch (collection.sortOrder) {
+      case "price-asc":
+        orderBy = { product: { price: "asc" } };
+        break;
+      case "price-desc":
+        orderBy = { product: { price: "desc" } };
+        break;
+      case "alphabetical-asc":
+        orderBy = { product: { name: "asc" } };
+        break;
+      case "alphabetical-desc":
+        orderBy = { product: { name: "desc" } };
+        break;
+      case "created-asc":
+        orderBy = { product: { createdAt: "asc" } };
+        break;
+      case "created-desc":
+        orderBy = { product: { createdAt: "desc" } };
+        break;
+      case "manual":
+      default:
+        orderBy = { position: "asc" };
+        break;
+    }
+
+    // Build cursor condition if provided
+    let cursorCondition = {};
+    if (cursor) {
+      // Find the cursor item's position to know where to start
+      const cursorItem = await db.collectionProduct.findFirst({
+        where: {
+          collectionId,
+          productId: cursor,
+        },
+        select: { position: true },
+      });
+
+      if (cursorItem) {
+        cursorCondition = {
+          position: { gt: cursorItem.position },
+        };
+      }
+    }
+
+    // Get products with positions - fetch one extra to check if there's more
+    const collectionProductsList = await db.collectionProduct.findMany({
+      where: {
+        collectionId,
+        product: { status: "active" },
+        ...cursorCondition,
+      },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            price: true,
+            compareAtPrice: true,
+          },
+        },
+      },
+      orderBy,
+      take: limit + 1, // Fetch one extra to check if there's more
+    });
+
+    // Check if there are more results
+    const hasMore = collectionProductsList.length > limit;
+    const itemsToReturn = hasMore
+      ? collectionProductsList.slice(0, limit)
+      : collectionProductsList;
+
+    // Get primary images and variants for each product
+    const productsWithDetails = await Promise.all(
+      itemsToReturn.map(async (cp) => {
+        // Get primary image
+        const primaryMedia = await db.productMedia.findFirst({
+          where: {
+            productId: cp.productId,
+            isPrimary: true,
+          },
+          include: {
+            media: {
+              select: { url: true },
+            },
+          },
+        });
+
+        // Get variants with options and inventory
+        const variants = await db.productVariant.findMany({
+          where: { productId: cp.productId },
+          orderBy: { position: "asc" },
+          include: {
+            inventory: true,
+          },
+          take: 10, // Limit variants for performance
+        });
+
+        const variantsWithOptions = await Promise.all(
+          variants.map(async (v) => {
+            const variantOptions = await db.productVariantOption.findMany({
+              where: { variantId: v.id },
+              include: {
+                option: true,
+                optionValue: true,
+              },
+            });
+
+            return {
+              id: v.id,
+              options: variantOptions.map((vo) => ({
+                optionName: vo.option?.name || "",
+                optionValue: vo.optionValue?.name || "",
+              })),
+              inventory: v.inventory
+                ? { available: v.inventory.available }
+                : null,
+            };
+          })
+        );
+
+        return {
+          id: cp.product.id,
+          name: cp.product.name,
+          slug: cp.product.slug,
+          price: String(cp.product.price),
+          compareAtPrice: cp.product.compareAtPrice
+            ? String(cp.product.compareAtPrice)
+            : null,
+          primaryImage: primaryMedia?.media?.url || null,
+          variants: variantsWithOptions,
+        };
+      })
+    );
+
+    // Next cursor is the last product's ID
+    const nextCursor = hasMore
+      ? itemsToReturn[itemsToReturn.length - 1].productId
+      : null;
+
+    return {
+      products: productsWithDetails,
+      nextCursor,
+      hasMore,
+    };
+  });
+
+// Query options for public collection
+export const getPublicCollectionQueryOptions = (slug: string) => {
+  return queryOptions({
+    queryKey: [PUBLIC_COLLECTION_QUERY_KEY, slug],
+    queryFn: async () => {
+      return await getPublicCollectionBySlugServerFn({ data: { slug } });
+    },
+    enabled: !!slug,
+  });
+};

@@ -921,6 +921,7 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       orderId: z.string(),
+      trackingNumber: z.string().optional().nullable(),
     })
   )
   .handler(async ({ data }) => {
@@ -1001,13 +1002,14 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
       });
     }
 
-    // Update order fulfillment status, payment status, and order status
+    // Update order fulfillment status, payment status, order status, and tracking number
     await db.order.update({
       where: { id: data.orderId },
       data: {
         status: "fulfilled",
         financialStatus: "paid",
         fulfillmentStatus: "fulfilled",
+        trackingNumber: data.trackingNumber || null,
         updatedAt: new Date(),
       },
     });
@@ -1019,6 +1021,26 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
     await markCollectionsForRegeneration(["inventory"], "product");
 
     // Fetch and return updated order
+    return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));
+  });
+
+// Update tracking number for an order
+export const updateOrderTrackingServerFn = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      orderId: z.string(),
+      trackingNumber: z.string().optional().nullable(),
+    })
+  )
+  .handler(async ({ data }) => {
+    await db.order.update({
+      where: { id: data.orderId },
+      data: {
+        trackingNumber: data.trackingNumber || null,
+        updatedAt: new Date(),
+      },
+    });
+
     return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));
   });
 

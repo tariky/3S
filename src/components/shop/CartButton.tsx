@@ -1,12 +1,19 @@
 "use client";
 
-import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getCartQueryOptions } from "@/queries/cart";
 import { Button } from "@/components/ui/button";
 import { ShoppingCart } from "lucide-react";
 import { useCartSession } from "@/hooks/useCartSession";
 import { cn } from "@/lib/utils";
+
+interface CartItem {
+	quantity: number;
+}
+
+interface CartData {
+	items: CartItem[];
+}
 
 interface CartButtonProps {
 	onClick: () => void;
@@ -17,10 +24,13 @@ export function CartButton({ onClick, className }: CartButtonProps) {
 	const { sessionId } = useCartSession();
 	const { data: cartData } = useQuery(
 		getCartQueryOptions(sessionId || undefined)
-	);
+	) as { data: CartData | undefined };
 
 	const itemCount =
-		cartData?.items.reduce((sum, item) => sum + item.quantity, 0) || 0;
+		cartData?.items.reduce(
+			(sum: number, item: CartItem) => sum + item.quantity,
+			0
+		) || 0;
 
 	return (
 		<Button

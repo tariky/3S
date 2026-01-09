@@ -1,5 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ShopNavigation } from "@/components/shop/ShopNavigation";
+import { ShopLayout } from "@/components/shop/ShopLayout";
+import { getPublicShopSettingsServerFn } from "@/queries/settings";
+import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getOrderByIdQueryOptions } from "@/queries/orders";
 import { activateAccountServerFn } from "@/server/auth.server";
@@ -22,6 +24,13 @@ export const Route = createFileRoute("/thank-you")({
 		return {
 			orderId: (search.orderId as string) || undefined,
 		};
+	},
+	loader: async () => {
+		const [settings, navigationItems] = await Promise.all([
+			getPublicShopSettingsServerFn(),
+			getPublicNavigationServerFn(),
+		]);
+		return { settings, navigationItems };
 	},
 });
 
@@ -260,6 +269,7 @@ function AccountActivationCard({ email }: { email: string }) {
 
 function ThankYouPage() {
 	const { orderId } = Route.useSearch();
+	const { settings, navigationItems } = Route.useLoaderData();
 
 	const { data: order, isLoading, error } = useQuery(
 		getOrderByIdQueryOptions(orderId || "")
@@ -267,8 +277,7 @@ function ThankYouPage() {
 
 	if (!orderId) {
 		return (
-			<div className="min-h-screen bg-gray-50">
-				<ShopNavigation />
+			<ShopLayout settings={settings} navigationItems={navigationItems}>
 				<div className="container mx-auto px-4 py-12">
 					<div className="max-w-2xl mx-auto text-center">
 						<h1 className="text-3xl font-bold text-gray-900 mb-4">
@@ -283,27 +292,25 @@ function ThankYouPage() {
 						</Button>
 					</div>
 				</div>
-			</div>
+			</ShopLayout>
 		);
 	}
 
 	if (isLoading) {
 		return (
-			<div className="min-h-screen bg-gray-50">
-				<ShopNavigation />
+			<ShopLayout settings={settings} navigationItems={navigationItems}>
 				<div className="container mx-auto px-4 py-12">
 					<div className="flex items-center justify-center">
 						<Loader2 className="size-8 animate-spin text-primary" />
 					</div>
 				</div>
-			</div>
+			</ShopLayout>
 		);
 	}
 
 	if (error || !order) {
 		return (
-			<div className="min-h-screen bg-gray-50">
-				<ShopNavigation />
+			<ShopLayout settings={settings} navigationItems={navigationItems}>
 				<div className="container mx-auto px-4 py-12">
 					<div className="max-w-2xl mx-auto text-center">
 						<h1 className="text-3xl font-bold text-gray-900 mb-4">
@@ -318,7 +325,7 @@ function ThankYouPage() {
 						</Button>
 					</div>
 				</div>
-			</div>
+			</ShopLayout>
 		);
 	}
 
@@ -326,8 +333,7 @@ function ThankYouPage() {
 	const items = order.items || [];
 
 	return (
-		<div className="min-h-screen bg-gray-50">
-			<ShopNavigation />
+		<ShopLayout settings={settings} navigationItems={navigationItems}>
 			<main className="container mx-auto px-4 py-12">
 				<div className="max-w-3xl mx-auto">
 					{/* Success Header */}
@@ -490,16 +496,7 @@ function ThankYouPage() {
 					</div>
 				</div>
 			</main>
-			<footer className="bg-gray-900 text-white mt-16">
-				<div className="container mx-auto px-4 py-12">
-					<div className="text-center text-sm text-gray-400">
-						<p>
-							&copy; {new Date().getFullYear()} Lunatik. Sva prava zadržana.
-						</p>
-					</div>
-				</div>
-			</footer>
-		</div>
+		</ShopLayout>
 	);
 }
 

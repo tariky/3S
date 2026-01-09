@@ -55,6 +55,35 @@ export const getNavigationQueryOptions = () => {
 	});
 };
 
+// Public navigation server function (GET, no auth - for storefront SSR)
+export const getPublicNavigationServerFn = createServerFn({ method: "GET" })
+	.handler(async () => {
+		const allItems = await db.navigation.findMany({
+			orderBy: { position: "asc" },
+		});
+
+		// Build hierarchical structure
+		const buildTree = (
+			items: typeof allItems,
+			parentId: string | null = null
+		): NavigationItem[] => {
+			return items
+				.filter((item) => item.parentId === parentId)
+				.map((item) => ({
+					id: item.id,
+					parentId: item.parentId,
+					title: item.title,
+					url: item.url,
+					icon: item.icon,
+					position: item.position,
+					children: buildTree(items, item.id),
+				}))
+				.sort((a, b) => a.position - b.position);
+		};
+
+		return buildTree(allItems);
+	});
+
 // Create navigation item
 export const createNavigationItemServerFn = createServerFn({ method: "POST" })
 	.inputValidator(
