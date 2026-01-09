@@ -212,6 +212,7 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 						sku: z.string().optional().nullable(),
 						quantity: z.string().optional().nullable(),
 						price: z.string().optional().nullable(),
+						compareAtPrice: z.string().optional().nullable(),
 						cost: z.string().optional().nullable(),
 						combination: z.array(
 							z.object({
@@ -339,6 +340,7 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 						productId,
 						sku: variantSku,
 						price: generatedVariant.price ? Number(generatedVariant.price) : null,
+						compareAtPrice: generatedVariant.compareAtPrice ? Number(generatedVariant.compareAtPrice) : null,
 						cost: generatedVariant.cost ? Number(generatedVariant.cost) : null,
 						position: generatedVariant.position,
 						isDefault: generatedVariant.position === 0,
@@ -729,6 +731,7 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 							sku: z.string().optional().nullable(),
 							quantity: z.string().optional().nullable(),
 							price: z.string().optional().nullable(),
+							compareAtPrice: z.string().optional().nullable(),
 							cost: z.string().optional().nullable(),
 							combination: z.array(
 								z.object({
@@ -917,6 +920,7 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 						productId,
 						sku: variantSku,
 						price: generatedVariant.price ? Number(generatedVariant.price) : null,
+						compareAtPrice: generatedVariant.compareAtPrice ? Number(generatedVariant.compareAtPrice) : null,
 						cost: generatedVariant.cost ? Number(generatedVariant.cost) : null,
 						position: generatedVariant.position,
 						isDefault: generatedVariant.position === 0,

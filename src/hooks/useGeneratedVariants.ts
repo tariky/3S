@@ -92,6 +92,7 @@ export function useGeneratedVariants(
 					sku: "",
 					quantity: productQuantity || "0",
 					price: productPrice || "",
+					compareAtPrice: "",
 					cost: productCost || "",
 				};
 			});

@@ -142,27 +142,60 @@ export function ProductForm({
         </form.Field>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <div className="flex flex-col gap-2 col-span-1">
-          <Label htmlFor="price" className="text-xs font-medium">
-            Prodajna cijena
-          </Label>
-          <form.Field
-            name="price"
-            validators={{
-              onChange: ({ value }: { value: string }) => {
-                const numValue = parseFloat(value);
-                if (isNaN(numValue) || numValue < 0) {
-                  return "Cijena mora biti validan pozitivan broj";
-                }
-                return undefined;
-              },
-            }}
-          >
-            {(field: any) => (
-              <>
+      {/* Only show product-level pricing when no variants exist */}
+      {generatedVariants.length === 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="flex flex-col gap-2 col-span-1">
+            <Label htmlFor="price" className="text-xs font-medium">
+              Prodajna cijena
+            </Label>
+            <form.Field
+              name="price"
+              validators={{
+                onChange: ({ value }: { value: string }) => {
+                  const numValue = parseFloat(value);
+                  if (isNaN(numValue) || numValue < 0) {
+                    return "Cijena mora biti validan pozitivan broj";
+                  }
+                  return undefined;
+                },
+              }}
+            >
+              {(field: any) => (
+                <>
+                  <PriceInput
+                    id="price"
+                    type="text"
+                    placeholder="0.00"
+                    className="text-sm"
+                    value={field.state.value}
+                    onChange={(value) => field.handleChange(value)}
+                    onBlur={field.handleBlur}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }
+                    }}
+                  />
+                  {field.state.meta.errors && (
+                    <p className="text-xs text-destructive">
+                      {field.state.meta.errors[0]}
+                    </p>
+                  )}
+                </>
+              )}
+            </form.Field>
+          </div>
+
+          <div className="flex flex-col gap-2 col-span-1">
+            <Label htmlFor="compareAtPrice" className="text-xs font-medium">
+              Stara cijena
+            </Label>
+            <form.Field name="compareAtPrice">
+              {(field: any) => (
                 <PriceInput
-                  id="price"
+                  id="compareAtPrice"
                   type="text"
                   placeholder="0.00"
                   className="text-sm"
@@ -176,66 +209,36 @@ export function ProductForm({
                     }
                   }}
                 />
-                {field.state.meta.errors && (
-                  <p className="text-xs text-destructive">
-                    {field.state.meta.errors[0]}
-                  </p>
-                )}
-              </>
-            )}
-          </form.Field>
-        </div>
+              )}
+            </form.Field>
+          </div>
 
-        <div className="flex flex-col gap-2 col-span-1">
-          <Label htmlFor="compareAtPrice" className="text-xs font-medium">
-            Snižena cijena
-          </Label>
-          <form.Field name="compareAtPrice">
-            {(field: any) => (
-              <PriceInput
-                id="compareAtPrice"
-                type="text"
-                placeholder="0.00"
-                className="text-sm"
-                value={field.state.value}
-                onChange={(value) => field.handleChange(value)}
-                onBlur={field.handleBlur}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }
-                }}
-              />
-            )}
-          </form.Field>
+          <div className="flex flex-col gap-2 col-span-1">
+            <Label htmlFor="cost" className="text-xs font-medium">
+              Nabavna cijena
+            </Label>
+            <form.Field name="cost">
+              {(field: any) => (
+                <PriceInput
+                  id="cost"
+                  type="text"
+                  placeholder="0.00"
+                  className="text-sm"
+                  value={field.state.value}
+                  onChange={(value) => field.handleChange(value)}
+                  onBlur={field.handleBlur}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+                  }}
+                />
+              )}
+            </form.Field>
+          </div>
         </div>
-
-        <div className="flex flex-col gap-2 col-span-1">
-          <Label htmlFor="cost" className="text-xs font-medium">
-            Nabavna cijena
-          </Label>
-          <form.Field name="cost">
-            {(field: any) => (
-              <PriceInput
-                id="cost"
-                type="text"
-                placeholder="0.00"
-                className="text-sm"
-                value={field.state.value}
-                onChange={(value) => field.handleChange(value)}
-                onBlur={field.handleBlur}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }
-                }}
-              />
-            )}
-          </form.Field>
-        </div>
-      </div>
+      )}
 
       <div className="flex gap-2">
         <form.Field name="taxIncluded">

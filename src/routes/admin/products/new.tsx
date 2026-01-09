@@ -106,6 +106,7 @@ function RouteComponent() {
 				sku: gv.sku || null,
 				quantity: gv.quantity || null,
 				price: gv.price || null,
+				compareAtPrice: gv.compareAtPrice || null,
 				cost: gv.cost || null,
 				combination: gv.combination,
 				position: index,

@@ -9,7 +9,8 @@ import {
 	ChevronRight,
 	ChevronDown,
 	GripVertical,
-	Check,
+	Upload,
+	X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,17 +20,9 @@ import {
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-	DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import {
 	NAVIGATION_QUERY_KEY,
 	type NavigationItem,
@@ -59,30 +52,7 @@ import {
 	verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
-// Popular Lucide icons for selection
-const POPULAR_ICONS = [
-	"Home",
-	"ShoppingCart",
-	"User",
-	"Search",
-	"Heart",
-	"Menu",
-	"Settings",
-	"Mail",
-	"Phone",
-	"MapPin",
-	"Tag",
-	"Package",
-	"CreditCard",
-	"Truck",
-	"Star",
-	"Info",
-	"HelpCircle",
-	"FileText",
-	"Image",
-	"Video",
-];
+import { useUploadFiles } from "@better-upload/client";
 
 function SortableNavigationItem({
 	item,
@@ -153,8 +123,12 @@ function SortableNavigationItem({
 				{!hasChildren && <div className="size-6" />}
 
 				<div className="flex-1 flex items-center gap-2">
-					{item.icon && (
-						<span className="text-sm font-medium">{item.icon}</span>
+					{item.image && (
+						<img
+							src={item.image}
+							alt=""
+							className="size-6 object-contain rounded"
+						/>
 					)}
 					<span className="font-medium">{item.title}</span>
 					<span className="text-sm text-gray-500">{item.url}</span>
@@ -217,6 +191,83 @@ function SortableNavigationItem({
 	);
 }
 
+// Image upload component for navigation
+function NavImageUpload({
+	value,
+	onChange,
+}: {
+	value: string;
+	onChange: (url: string) => void;
+}) {
+	const [isUploading, setIsUploading] = React.useState(false);
+
+	const { control } = useUploadFiles({
+		route: "images",
+		onUploadComplete: (data) => {
+			const publicUrls = data.metadata?.publicUrls as string[] | undefined;
+			if (publicUrls && publicUrls.length > 0) {
+				onChange(publicUrls[0]);
+			}
+			setIsUploading(false);
+		},
+	});
+
+	const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+
+		setIsUploading(true);
+		control.upload([file]);
+	};
+
+	return (
+		<div className="flex flex-col gap-2">
+			{value ? (
+				<div className="relative inline-flex items-center gap-3 p-3 border rounded-lg bg-gray-50">
+					<img
+						src={value}
+						alt="Nav icon"
+						className="size-10 object-contain"
+					/>
+					<span className="text-sm text-gray-600 truncate max-w-[200px]">
+						{value.split("/").pop()}
+					</span>
+					<button
+						type="button"
+						onClick={() => onChange("")}
+						className="p-1 bg-red-500 text-white rounded-full hover:bg-red-600 ml-auto"
+					>
+						<X className="w-3 h-3" />
+					</button>
+				</div>
+			) : (
+				<label
+					className={cn(
+						"flex items-center justify-center gap-2 h-20 border-2 border-dashed rounded-lg cursor-pointer hover:bg-gray-50 transition-colors",
+						isUploading && "opacity-50 cursor-not-allowed"
+					)}
+				>
+					{isUploading ? (
+						<Loader2 className="size-5 text-gray-400 animate-spin" />
+					) : (
+						<Upload className="size-5 text-gray-400" />
+					)}
+					<span className="text-sm text-gray-500">
+						{isUploading ? "Učitavanje..." : "Učitaj sliku (PNG, JPG, SVG)"}
+					</span>
+					<input
+						type="file"
+						accept="image/*,.svg"
+						onChange={handleFileChange}
+						className="hidden"
+						disabled={isUploading}
+					/>
+				</label>
+			)}
+		</div>
+	);
+}
+
 function NavigationItemDialog({
 	open,
 	onOpenChange,
@@ -244,7 +295,7 @@ function NavigationItemDialog({
 		defaultValues: {
 			title: item?.title || "",
 			url: item?.url || "",
-			icon: item?.icon || "none",
+			image: item?.image || "",
 		},
 		onSubmit: async ({ value }) => {
 			if (item) {
@@ -253,7 +304,7 @@ function NavigationItemDialog({
 					id: item.id,
 					title: value.title,
 					url: value.url,
-					icon: value.icon === "none" ? null : value.icon,
+					image: value.image || null,
 				});
 			} else {
 				// Create
@@ -261,7 +312,7 @@ function NavigationItemDialog({
 					parentId: parentId || null,
 					title: value.title,
 					url: value.url,
-					icon: value.icon === "none" ? null : value.icon,
+					image: value.image || null,
 				});
 			}
 			onOpenChange(false);
@@ -273,7 +324,7 @@ function NavigationItemDialog({
 			parentId: string | null;
 			title: string;
 			url: string;
-			icon: string | null;
+			image: string | null;
 		}) => {
 			return await createNavigationItemServerFn({ data });
 		},
@@ -287,7 +338,7 @@ function NavigationItemDialog({
 			id: string;
 			title: string;
 			url: string;
-			icon: string | null;
+			image: string | null;
 		}) => {
 			return await updateNavigationItemServerFn({ data });
 		},
@@ -301,11 +352,11 @@ function NavigationItemDialog({
 			if (item) {
 				form.setFieldValue("title", item.title);
 				form.setFieldValue("url", item.url);
-				form.setFieldValue("icon", item.icon || "none");
+				form.setFieldValue("image", item.image || "");
 			} else {
 				form.setFieldValue("title", "");
 				form.setFieldValue("url", "");
-				form.setFieldValue("icon", "none");
+				form.setFieldValue("image", "");
 			}
 		}
 	}, [open, item, form]);
@@ -378,26 +429,17 @@ function NavigationItemDialog({
 						)}
 					</form.Field>
 
-					<form.Field name="icon">
+					<form.Field name="image">
 						{(field) => (
 							<div className="flex flex-col gap-2">
-								<Label htmlFor={field.name}>Ikona</Label>
-								<Select
-									value={field.state.value || "none"}
-									onValueChange={(value) => field.handleChange(value)}
-								>
-									<SelectTrigger>
-										<SelectValue placeholder="Odaberi ikonu" />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="none">Bez ikone</SelectItem>
-										{POPULAR_ICONS.map((icon) => (
-											<SelectItem key={icon} value={icon}>
-												{icon}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
+								<Label>Slika (opciono)</Label>
+								<NavImageUpload
+									value={field.state.value}
+									onChange={(url) => field.handleChange(url)}
+								/>
+								<span className="text-xs text-muted-foreground">
+									Prikazuje se pored naziva u navigaciji
+								</span>
 							</div>
 						)}
 					</form.Field>

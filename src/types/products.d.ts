@@ -19,6 +19,7 @@ export interface GeneratedVariant {
   sku: string;
   quantity: string;
   price: string;
+  compareAtPrice: string;
   cost: string;
   reserved?: number; // Reserved inventory quantity
 }

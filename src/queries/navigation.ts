@@ -12,6 +12,7 @@ export type NavigationItem = {
 	title: string;
 	url: string;
 	icon: string | null;
+	image: string | null;
 	position: number;
 	children?: NavigationItem[];
 };
@@ -37,6 +38,7 @@ export const getNavigationServerFn = createServerFn({ method: "POST" })
 					title: item.title,
 					url: item.url,
 					icon: item.icon,
+					image: item.image,
 					position: item.position,
 					children: buildTree(items, item.id),
 				}))
@@ -75,6 +77,7 @@ export const getPublicNavigationServerFn = createServerFn({ method: "GET" })
 					title: item.title,
 					url: item.url,
 					icon: item.icon,
+					image: item.image,
 					position: item.position,
 					children: buildTree(items, item.id),
 				}))
@@ -92,6 +95,7 @@ export const createNavigationItemServerFn = createServerFn({ method: "POST" })
 			title: z.string().min(1),
 			url: z.string().min(1),
 			icon: z.string().nullable().optional(),
+			image: z.string().nullable().optional(),
 			position: z.number().optional(),
 		})
 	)
@@ -118,6 +122,7 @@ export const createNavigationItemServerFn = createServerFn({ method: "POST" })
 				title: data.title,
 				url: data.url,
 				icon: data.icon || null,
+				image: data.image || null,
 				position,
 			},
 		});
@@ -134,6 +139,7 @@ export const updateNavigationItemServerFn = createServerFn({ method: "POST" })
 			title: z.string().min(1).optional(),
 			url: z.string().min(1).optional(),
 			icon: z.string().nullable().optional(),
+			image: z.string().nullable().optional(),
 			position: z.number().optional(),
 		})
 	)

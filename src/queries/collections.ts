@@ -927,6 +927,8 @@ export type PublicCollectionProduct = {
   primaryImage: string | null;
   variants: {
     id: string;
+    price: string | null;
+    compareAtPrice: string | null;
     options: { optionName: string; optionValue: string }[];
     inventory: { available: number } | null;
   }[];
@@ -1099,6 +1101,8 @@ export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET
 
             return {
               id: v.id,
+              price: v.price ? String(v.price) : null,
+              compareAtPrice: v.compareAtPrice ? String(v.compareAtPrice) : null,
               options: variantOptions.map((vo) => ({
                 optionName: vo.option?.name || "",
                 optionValue: vo.optionValue?.name || "",
@@ -1110,14 +1114,25 @@ export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET
           })
         );
 
+        // Find first in-stock variant to use its price
+        const firstInStockVariant = variantsWithOptions.find(
+          (v) => v.inventory && v.inventory.available > 0
+        );
+
+        // Use first in-stock variant's price, or fall back to first variant, then product price
+        const displayPrice = firstInStockVariant?.price
+          || variantsWithOptions[0]?.price
+          || String(cp.product.price);
+        const displayCompareAtPrice = firstInStockVariant?.compareAtPrice
+          || variantsWithOptions[0]?.compareAtPrice
+          || (cp.product.compareAtPrice ? String(cp.product.compareAtPrice) : null);
+
         return {
           id: cp.product.id,
           name: cp.product.name,
           slug: cp.product.slug,
-          price: String(cp.product.price),
-          compareAtPrice: cp.product.compareAtPrice
-            ? String(cp.product.compareAtPrice)
-            : null,
+          price: displayPrice,
+          compareAtPrice: displayCompareAtPrice,
           primaryImage: primaryMedia?.media?.url || null,
           variants: variantsWithOptions,
         };

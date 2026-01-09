@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { PriceInput } from "@/components/ui/price-input";
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
-import { GeneratedVariant } from "@/routes/admin/products/types";
+import { GeneratedVariant } from "@/types/products";
 
 interface SortableGeneratedVariantProps {
   gv: GeneratedVariant;
@@ -75,7 +75,7 @@ export function SortableGeneratedVariant({
           />
         </div>
       </div>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-2">
         <div className="flex flex-col gap-1">
           <Label className="text-xs text-gray-500">SKU</Label>
           <Input
@@ -132,6 +132,25 @@ export function SortableGeneratedVariant({
             onChange={(value) =>
               setGeneratedVariants((prev) =>
                 prev.map((v) => (v.id === gv.id ? { ...v, price: value } : v))
+              )
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-gray-500">Stara cijena</Label>
+          <PriceInput
+            type="text"
+            placeholder="0.00"
+            value={gv.compareAtPrice || ""}
+            onChange={(value) =>
+              setGeneratedVariants((prev) =>
+                prev.map((v) => (v.id === gv.id ? { ...v, compareAtPrice: value } : v))
               )
             }
             onKeyDown={(e) => {
