@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
+import { Toaster } from "sonner";
 
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 import { getPublicShopSettingsServerFn } from "@/queries/settings";
@@ -70,6 +71,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <Outlet />
+        <Toaster position="top-center" richColors />
         <TanStackDevtools
           config={{
             position: "bottom-right",
