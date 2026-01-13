@@ -46,6 +46,7 @@ import {
 	verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ProxyImage } from "@/components/ui/proxy-image";
 
 export const Route = createFileRoute("/admin/collections/$collectionId")({
 	component: EditCollectionPage,
@@ -349,9 +350,12 @@ function SortableProductRow({
 			<TableCell>
 				<div className="flex items-center gap-3">
 					{item.product?.image ? (
-						<img
+						<ProxyImage
 							src={item.product.image}
 							alt={item.product?.name || ""}
+							width={40}
+							height={40}
+							resizingType="fill"
 							className="w-10 h-10 rounded object-cover"
 						/>
 					) : (

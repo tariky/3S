@@ -12,6 +12,7 @@ import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { ProxyImage } from "@/components/ui/proxy-image";
 
 export const Route = createFileRoute("/collection/$slug")({
 	component: CollectionPage,
@@ -136,9 +137,12 @@ function CollectionPage() {
 				<div className="mb-8">
 					{collection.image && (
 						<div className="relative h-48 md:h-64 mb-6 rounded-lg overflow-hidden">
-							<img
+							<ProxyImage
 								src={collection.image}
 								alt={collection.name}
+								width={1200}
+								height={300}
+								resizingType="fill"
 								className="w-full h-full object-cover"
 							/>
 							<div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />

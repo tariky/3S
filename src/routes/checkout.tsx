@@ -8,6 +8,10 @@ import {
 	clearCartMutationOptions,
 	CART_QUERY_KEY,
 } from "@/queries/cart";
+import {
+	validateDiscountCodeServerFn,
+	incrementDiscountUsageServerFn,
+} from "@/queries/discounts";
 import { getActiveShippingMethodsQueryOptions } from "@/queries/shipping-methods";
 import { createOrderServerFn } from "@/queries/orders";
 import {
@@ -34,6 +38,7 @@ import {
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
 import { cn } from "@/lib/utils";
+import { ProxyImage } from "@/components/ui/proxy-image";
 import { authClient } from "@/lib/auth-client";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { CityCombobox } from "@/components/ui/city-combobox";
@@ -145,11 +150,14 @@ function CheckoutPage() {
 	const [showOrderSummary, setShowOrderSummary] = useState(false);
 	const [discountCode, setDiscountCode] = useState("");
 	const [appliedDiscount, setAppliedDiscount] = useState<{
+		id: string;
 		code: string;
 		amount: number;
 		type: "percentage" | "fixed";
+		maxDiscount: number | null;
 	} | null>(null);
 	const [discountError, setDiscountError] = useState("");
+	const [discountLoading, setDiscountLoading] = useState(false);
 
 	const clearCartMutation = useMutation(
 		clearCartMutationOptions(sessionId || undefined)
@@ -230,11 +238,20 @@ function CheckoutPage() {
 				};
 
 				const shippingCost = calculateShippingCost();
-				const discountAmount = appliedDiscount
-					? appliedDiscount.type === "percentage"
-						? (subtotal * appliedDiscount.amount) / 100
-						: appliedDiscount.amount
-					: 0;
+				const calcDiscount = () => {
+					if (!appliedDiscount) return 0;
+					let discount = 0;
+					if (appliedDiscount.type === "percentage") {
+						discount = (subtotal * appliedDiscount.amount) / 100;
+						if (appliedDiscount.maxDiscount) {
+							discount = Math.min(discount, appliedDiscount.maxDiscount);
+						}
+					} else {
+						discount = appliedDiscount.amount;
+					}
+					return Math.min(discount, subtotal);
+				};
+				const discountAmount = calcDiscount();
 				const total = subtotal + shippingCost - discountAmount;
 
 				// Create order
@@ -249,6 +266,8 @@ function CheckoutPage() {
 						shipping: shippingCost,
 						discount: discountAmount,
 						total: total,
+						discountId: appliedDiscount?.id || null,
+						discountCode: appliedDiscount?.code || null,
 						shippingAddress: {
 							firstName: value.name,
 							lastName: value.lastName,
@@ -260,6 +279,17 @@ function CheckoutPage() {
 						},
 					},
 				})) as { id: string };
+
+				// Increment discount usage if discount was applied
+				if (appliedDiscount?.id) {
+					try {
+						await incrementDiscountUsageServerFn({
+							data: { discountId: appliedDiscount.id },
+						});
+					} catch (error) {
+						console.error("Error incrementing discount usage:", error);
+					}
+				}
 
 				// Save address to address book if user is authenticated and wants to save
 				if (isAuthenticated && saveAddress && !selectedAddressId) {
@@ -389,17 +419,42 @@ function CheckoutPage() {
 		}
 	};
 
-	// Apply discount code (placeholder - implement actual discount logic)
-	const handleApplyDiscount = () => {
+	// Apply discount code
+	const handleApplyDiscount = async () => {
 		setDiscountError("");
+		setDiscountLoading(true);
+
 		if (!discountCode.trim()) {
 			setDiscountError("Unesite kod za popust");
+			setDiscountLoading(false);
 			return;
 		}
 
-		// Placeholder: In a real app, validate discount code against backend
-		// For now, we'll just show an error
-		setDiscountError("Kod za popust nije validan");
+		try {
+			const result = await validateDiscountCodeServerFn({
+				data: {
+					code: discountCode.trim().toUpperCase(),
+					cartSubtotal: subtotal,
+				},
+			});
+
+			if (result.valid && result.discount) {
+				setAppliedDiscount({
+					id: result.discount.id,
+					code: result.discount.code,
+					type: result.discount.type as "percentage" | "fixed",
+					amount: result.discount.value,
+					maxDiscount: result.discount.maximumDiscount,
+				});
+				setDiscountCode("");
+			} else {
+				setDiscountError(result.error || "Kod za popust nije validan");
+			}
+		} catch (error) {
+			setDiscountError("Greška pri provjeri koda za popust");
+		} finally {
+			setDiscountLoading(false);
+		}
 	};
 
 	const removeDiscount = () => {
@@ -450,11 +505,24 @@ function CheckoutPage() {
 	};
 
 	const shippingCost = calculateShippingCost();
-	const discountAmount = appliedDiscount
-		? appliedDiscount.type === "percentage"
-			? (subtotal * appliedDiscount.amount) / 100
-			: appliedDiscount.amount
-		: 0;
+	const calculateDiscountAmount = () => {
+		if (!appliedDiscount) return 0;
+
+		let discount = 0;
+		if (appliedDiscount.type === "percentage") {
+			discount = (subtotal * appliedDiscount.amount) / 100;
+			// Apply maximum discount cap if set
+			if (appliedDiscount.maxDiscount) {
+				discount = Math.min(discount, appliedDiscount.maxDiscount);
+			}
+		} else {
+			discount = appliedDiscount.amount;
+		}
+
+		// Discount cannot exceed subtotal
+		return Math.min(discount, subtotal);
+	};
+	const discountAmount = calculateDiscountAmount();
 	const total = subtotal + shippingCost - discountAmount;
 	const itemCount = items.reduce(
 		(sum: number, item: CartItem) => sum + item.quantity,
@@ -987,9 +1055,14 @@ function CheckoutPage() {
 													type="button"
 													variant="outline"
 													onClick={handleApplyDiscount}
+													disabled={discountLoading}
 													className="h-11 px-4"
 												>
-													Primjeni
+													{discountLoading ? (
+														<Loader2 className="size-4 animate-spin" />
+													) : (
+														"Primjeni"
+													)}
 												</Button>
 											</div>
 										)}
@@ -1186,9 +1259,12 @@ function CheckoutPage() {
 												>
 													<div className="relative w-16 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
 														{item.image ? (
-															<img
+															<ProxyImage
 																src={item.image}
 																alt={item.product?.name || "Product"}
+																width={64}
+																height={80}
+																resizingType="fill"
 																className="w-full h-full object-cover"
 															/>
 														) : (
@@ -1257,9 +1333,14 @@ function CheckoutPage() {
 													type="button"
 													variant="outline"
 													onClick={handleApplyDiscount}
+													disabled={discountLoading}
 													className="h-10 px-4"
 												>
-													Primjeni
+													{discountLoading ? (
+														<Loader2 className="size-4 animate-spin" />
+													) : (
+														"Primjeni"
+													)}
 												</Button>
 											</div>
 										)}
@@ -1333,9 +1414,12 @@ function CheckoutPage() {
 										<div key={item.id} className="flex gap-3">
 											<div className="relative w-12 h-15 flex-shrink-0 rounded-md overflow-hidden bg-gray-100">
 												{item.image ? (
-													<img
+													<ProxyImage
 														src={item.image}
 														alt={item.product?.name || "Product"}
+														width={48}
+														height={60}
+														resizingType="fill"
 														className="w-full h-full object-cover"
 													/>
 												) : (

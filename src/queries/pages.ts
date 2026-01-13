@@ -89,6 +89,33 @@ export const getPageBySlugServerFn = createServerFn({ method: "POST" })
 		return page || null;
 	});
 
+export const getPageBySlugQueryOptions = (slug: string) => {
+	return queryOptions({
+		queryKey: [PAGES_QUERY_KEY, "slug", slug],
+		queryFn: async () => {
+			return await getPageBySlugServerFn({ data: { slug } });
+		},
+	});
+};
+
+// Get published page by slug (for public use)
+export const getPublicPageBySlugServerFn = createServerFn({ method: "GET" })
+	.inputValidator(
+		z.object({
+			slug: z.string(),
+		})
+	)
+	.handler(async ({ data }) => {
+		const page = await db.page.findFirst({
+			where: {
+				slug: data.slug,
+				status: "published",
+			},
+		});
+
+		return page || null;
+	});
+
 // Create page
 export const createPageServerFn = createServerFn({ method: "POST" })
 	.inputValidator(

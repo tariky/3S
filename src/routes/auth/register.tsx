@@ -22,6 +22,7 @@ import { authClient } from "@/lib/auth-client";
 import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CART_QUERY_KEY, mergeCartsMutationOptions } from "@/queries/cart";
+import { WISHLIST_QUERY_KEY, mergeWishlistsMutationOptions } from "@/queries/wishlist";
 import { useCartSession } from "@/hooks/useCartSession";
 import { getUserRoleServerFn, createCustomerFromUserServerFn } from "@/server/auth.server";
 
@@ -59,6 +60,7 @@ function RouteComponent() {
   const queryClient = useQueryClient();
   const { sessionId, clearSession } = useCartSession();
   const mergeCartsMutation = useMutation(mergeCartsMutationOptions());
+  const mergeWishlistsMutation = useMutation(mergeWishlistsMutationOptions());
 
   const formOpts = formOptions({
     defaultValues: defaultUser,
@@ -114,7 +116,7 @@ function RouteComponent() {
         // Registration successful
         setSuccess(true);
 
-        // If user was created and has a session, merge carts
+        // If user was created and has a session, merge carts and wishlists
         if (response.data?.user?.id && sessionId) {
           try {
             await mergeCartsMutation.mutateAsync({
@@ -122,10 +124,21 @@ function RouteComponent() {
               userId: response.data.user.id,
             });
             queryClient.invalidateQueries({ queryKey: [CART_QUERY_KEY] });
-            clearSession();
           } catch (error) {
             console.error("Error merging carts:", error);
           }
+
+          try {
+            await mergeWishlistsMutation.mutateAsync({
+              guestSessionId: sessionId,
+              userId: response.data.user.id,
+            });
+            queryClient.invalidateQueries({ queryKey: [WISHLIST_QUERY_KEY] });
+          } catch (error) {
+            console.error("Error merging wishlists:", error);
+          }
+
+          clearSession();
         }
 
         // Auto-login after successful registration

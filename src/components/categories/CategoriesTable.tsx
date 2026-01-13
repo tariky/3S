@@ -42,6 +42,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Route } from "@/routes/admin/products/categories";
+import { ProxyImage } from "@/components/ui/proxy-image";
 
 export const columns: ColumnDef<ProductCategory>[] = [
   {
@@ -72,9 +73,12 @@ export const columns: ColumnDef<ProductCategory>[] = [
     header: "Slika",
     cell: ({ row }) => (
       <div className="w-12 h-12 rounded-md overflow-hidden">
-        <img
+        <ProxyImage
           src={row.getValue("image")}
           alt={row.getValue("name")}
+          width={48}
+          height={48}
+          resizingType="fill"
           className="w-full h-full object-cover"
         />
       </div>

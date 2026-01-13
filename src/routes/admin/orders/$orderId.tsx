@@ -31,6 +31,7 @@ import {
 } from "@/queries/orders";
 import { ProductSearch } from "@/components/orders/ProductSearch";
 import { cn } from "@/lib/utils";
+import { ProxyImage } from "@/components/ui/proxy-image";
 import { useState, useMemo } from "react";
 import { ORDERS_QUERY_KEY } from "@/queries/orders";
 
@@ -554,12 +555,15 @@ function RouteComponent() {
                 >
                   <div className="flex gap-3 w-full">
                     <div className="relative">
-                      <img
+                      <ProxyImage
                         src={
                           (item as any).imageUrl ||
                           "https://via.placeholder.com/64"
                         }
                         alt={item.title}
+                        width={64}
+                        height={64}
+                        resizingType="fill"
                         className="w-16 h-16 rounded-md aspect-square object-cover"
                       />
                       {isEditMode && (

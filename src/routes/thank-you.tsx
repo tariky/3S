@@ -12,11 +12,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { authClient } from "@/lib/auth-client";
 import { CART_QUERY_KEY, mergeCartsMutationOptions } from "@/queries/cart";
+import { WISHLIST_QUERY_KEY, mergeWishlistsMutationOptions } from "@/queries/wishlist";
 import { useCartSession } from "@/hooks/useCartSession";
 import { getUserRoleServerFn } from "@/server/auth.server";
+import { RecommendationCarousel } from "@/components/shop/RecommendationCarousel";
+import {
+	trackPurchaseServerFn,
+	getRecommendationsServerFn,
+} from "@/queries/gorse";
+import { ProxyImage } from "@/components/ui/proxy-image";
 
 export const Route = createFileRoute("/thank-you")({
 	component: ThankYouPage,
@@ -52,6 +59,7 @@ function AccountActivationCard({ email }: { email: string }) {
 	const [isLoggedIn, setIsLoggedIn] = useState(false);
 
 	const mergeCartsMutation = useMutation(mergeCartsMutationOptions());
+	const mergeWishlistsMutation = useMutation(mergeWishlistsMutationOptions());
 
 	// Check if user is already logged in
 	useEffect(() => {
@@ -80,8 +88,8 @@ function AccountActivationCard({ email }: { email: string }) {
 
 				if (result.success && result.user) {
 					setIsActivated(true);
-					
-					// Merge guest cart with user cart if guest session exists
+
+					// Merge guest cart and wishlist with user if guest session exists
 					if (sessionId && result.user.id) {
 						try {
 							await mergeCartsMutation.mutateAsync({
@@ -89,10 +97,21 @@ function AccountActivationCard({ email }: { email: string }) {
 								userId: result.user.id,
 							});
 							queryClient.invalidateQueries({ queryKey: [CART_QUERY_KEY] });
-							clearSession();
 						} catch (error) {
 							console.error("Error merging carts:", error);
 						}
+
+						try {
+							await mergeWishlistsMutation.mutateAsync({
+								guestSessionId: sessionId,
+								userId: result.user.id,
+							});
+							queryClient.invalidateQueries({ queryKey: [WISHLIST_QUERY_KEY] });
+						} catch (error) {
+							console.error("Error merging wishlists:", error);
+						}
+
+						clearSession();
 					}
 
 					// Show success message
@@ -270,10 +289,42 @@ function AccountActivationCard({ email }: { email: string }) {
 function ThankYouPage() {
 	const { orderId } = Route.useSearch();
 	const { settings, navigationItems } = Route.useLoaderData();
+	const { sessionId } = useCartSession();
+	const purchaseTrackedRef = useRef(false);
 
 	const { data: order, isLoading, error } = useQuery(
 		getOrderByIdQueryOptions(orderId || "")
 	);
+
+	// Track purchases when order loads
+	useEffect(() => {
+		if (order && !purchaseTrackedRef.current) {
+			purchaseTrackedRef.current = true;
+			const userId = sessionId || order.customerId || "anonymous";
+
+			// Track each item as a purchase
+			order.items?.forEach((item) => {
+				if (item.productId) {
+					trackPurchaseServerFn({
+						data: { itemId: item.productId, userId },
+					});
+				}
+			});
+		}
+	}, [order, sessionId]);
+
+	// Fetch recommendations
+	const { data: recommendedData, isLoading: recommendedLoading } = useQuery({
+		queryKey: ["thank-you-recommendations", sessionId],
+		queryFn: () =>
+			getRecommendationsServerFn({
+				data: { userId: sessionId || "anonymous", count: 8 },
+			}),
+		enabled: !!order,
+		staleTime: 1000 * 60 * 5,
+	});
+
+	const recommendedProducts = recommendedData?.products || [];
 
 	if (!orderId) {
 		return (
@@ -369,9 +420,12 @@ function ThankYouPage() {
 									>
 										{item.imageUrl && (
 											<div className="relative w-16 h-16 flex-shrink-0 rounded-md overflow-hidden bg-gray-100">
-												<img
+												<ProxyImage
 													src={item.imageUrl}
 													alt={item.title}
+													width={64}
+													height={64}
+													resizingType="fill"
 													className="w-full h-full object-cover"
 												/>
 											</div>
@@ -486,7 +540,7 @@ function ThankYouPage() {
 					</div>
 
 					{/* Actions */}
-					<div className="flex flex-col sm:flex-row gap-4 justify-center">
+					<div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
 						<Button asChild size="lg">
 							<Link to="/products">Nastavi kupovinu</Link>
 						</Button>
@@ -494,6 +548,17 @@ function ThankYouPage() {
 							<Link to="/">Početna stranica</Link>
 						</Button>
 					</div>
+
+					{/* Recommendations */}
+					{(recommendedProducts.length > 0 || recommendedLoading) && (
+						<div className="mt-8 pt-8 border-t border-gray-200">
+							<RecommendationCarousel
+								title="Možda vam se također sviđa"
+								products={recommendedProducts}
+								loading={recommendedLoading}
+							/>
+						</div>
+					)}
 				</div>
 			</main>
 		</ShopLayout>

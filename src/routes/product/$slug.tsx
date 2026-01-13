@@ -9,7 +9,7 @@ import {
   type ShopProduct,
 } from "@/queries/shop-products";
 import { addToCartMutationOptions, CART_QUERY_KEY } from "@/queries/cart";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, ShoppingCart, ChevronRight, Home, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,13 @@ import { ProductImageCarousel } from "@/components/shop/ProductImageCarousel";
 import { ProductInfoAccordion } from "@/components/shop/ProductInfoAccordion";
 import { QuantityPicker } from "@/components/shop/QuantityPicker";
 import { MobileStickyCart } from "@/components/shop/MobileStickyCart";
+import { RecommendationCarousel } from "@/components/shop/RecommendationCarousel";
+import { WishlistButton } from "@/components/shop/WishlistButton";
+import {
+  trackProductViewServerFn,
+  getSimilarItemsServerFn,
+  getPopularItemsServerFn,
+} from "@/queries/gorse";
 
 export const Route = createFileRoute("/product/$slug")({
   component: ProductDetailPage,
@@ -114,9 +121,48 @@ function ProductDetailPage() {
   >({});
   const [quantity, setQuantity] = useState(1);
   const [showAddedFeedback, setShowAddedFeedback] = useState(false);
+  const recommendationsRef = useRef<HTMLDivElement>(null);
   const addToCartMutation = useMutation(
     addToCartMutationOptions(sessionId || undefined)
   );
+
+  // Track product view
+  useEffect(() => {
+    if (product?.id && sessionId) {
+      trackProductViewServerFn({ data: { itemId: product.id, userId: sessionId } });
+    }
+  }, [product?.id, sessionId]);
+
+  // Fetch similar items
+  const { data: similarData, isLoading: similarLoading } = useQuery({
+    queryKey: ["similar-items", product?.id],
+    queryFn: () =>
+      getSimilarItemsServerFn({ data: { itemId: product!.id, count: 8 } }),
+    enabled: !!product?.id,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+
+  // Fetch popular items as fallback
+  const { data: popularData, isLoading: popularLoading } = useQuery({
+    queryKey: ["popular-items-fallback"],
+    queryFn: () => getPopularItemsServerFn({ data: { count: 8 } }),
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+
+  const similarProducts = similarData?.products || [];
+  const popularProducts = popularData?.products || [];
+
+  // Use similar items if available, otherwise fall back to popular (excluding current product)
+  const recommendedProducts = useMemo(() => {
+    if (similarProducts.length > 0) {
+      return similarProducts;
+    }
+    // Filter out current product from popular items
+    return popularProducts.filter((p) => p.id !== product?.id);
+  }, [similarProducts, popularProducts, product?.id]);
+
+  const recommendationsLoading = similarLoading || (similarProducts.length === 0 && popularLoading);
+  const recommendationTitle = similarProducts.length > 0 ? "Slični proizvodi" : "Popularni proizvodi";
 
   // Reset feedback after 1.5 seconds
   useEffect(() => {
@@ -213,6 +259,16 @@ function ProductDetailPage() {
       });
       queryClient.invalidateQueries({ queryKey: [CART_QUERY_KEY] });
       setShowAddedFeedback(true);
+
+      // Scroll to recommendations after successful add
+      if (recommendationsRef.current && recommendedProducts.length > 0) {
+        setTimeout(() => {
+          recommendationsRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }, 500); // Small delay for better UX
+      }
     } catch (error: unknown) {
       const err = error as { message?: string };
       if (err?.message) {
@@ -233,33 +289,38 @@ function ProductDetailPage() {
       <main className="container mx-auto px-4 py-6 lg:py-10">
         {/* Breadcrumb */}
         <nav className="mb-6 lg:mb-8" aria-label="Breadcrumb">
-          <ol className="flex items-center gap-1.5 text-sm">
-            <li>
+          <ol className="flex items-center flex-wrap gap-1 text-sm">
+            <li className="flex items-center">
               <Link
                 to="/"
-                className="text-gray-500 hover:text-gray-900 transition-colors"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all"
               >
                 <Home className="size-4" />
+                <span className="hidden sm:inline">Početna</span>
               </Link>
             </li>
-            <ChevronRight className="size-4 text-gray-400" />
+            <li className="flex items-center text-gray-300">
+              <ChevronRight className="size-4" />
+            </li>
             {product.category && (
               <>
-                <li>
+                <li className="flex items-center">
                   <Link
                     to="/products/$categorySlug"
                     params={{ categorySlug: product.category.slug }}
                     search={{ tags: undefined }}
-                    className="text-gray-500 hover:text-gray-900 transition-colors"
+                    className="px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all"
                   >
                     {product.category.name}
                   </Link>
                 </li>
-                <ChevronRight className="size-4 text-gray-400" />
+                <li className="flex items-center text-gray-300">
+                  <ChevronRight className="size-4" />
+                </li>
               </>
             )}
-            <li>
-              <span className="text-gray-900 font-medium truncate max-w-[200px] inline-block">
+            <li className="flex items-center">
+              <span className="px-2 py-1 text-gray-900 font-medium truncate max-w-[250px]">
                 {product.name}
               </span>
             </li>
@@ -387,32 +448,39 @@ function ProductDetailPage() {
                 )}
               </div>
 
-              {/* Add to Cart Button */}
-              <Button
-                size="lg"
-                className={cn(
-                  "w-full h-12 text-base font-medium transition-all duration-300",
-                  showAddedFeedback && "bg-emerald-500 hover:bg-emerald-500"
-                )}
-                disabled={
-                  !isInStock || addToCartMutation.isPending || showAddedFeedback
-                }
-                onClick={handleAddToCart}
-              >
-                {addToCartMutation.isPending ? (
-                  <Loader2 className="size-5 animate-spin" />
-                ) : showAddedFeedback ? (
-                  <span className="flex items-center gap-2 animate-success-pop">
-                    <Check className="size-5" />
-                    Dodano u korpu
-                  </span>
-                ) : (
-                  <>
-                    <ShoppingCart className="size-5 mr-2" />
-                    {isInStock ? "Dodaj u korpu" : "Nema na zalihi"}
-                  </>
-                )}
-              </Button>
+              {/* Add to Cart Button and Wishlist */}
+              <div className="flex items-center gap-3">
+                <Button
+                  size="lg"
+                  className={cn(
+                    "flex-1 h-12 text-base font-medium transition-all duration-300",
+                    showAddedFeedback && "bg-emerald-500 hover:bg-emerald-500"
+                  )}
+                  disabled={
+                    !isInStock || addToCartMutation.isPending || showAddedFeedback
+                  }
+                  onClick={handleAddToCart}
+                >
+                  {addToCartMutation.isPending ? (
+                    <Loader2 className="size-5 animate-spin" />
+                  ) : showAddedFeedback ? (
+                    <span className="flex items-center gap-2 animate-success-pop">
+                      <Check className="size-5" />
+                      Dodano u korpu
+                    </span>
+                  ) : (
+                    <>
+                      <ShoppingCart className="size-5 mr-2" />
+                      {isInStock ? "Dodaj u korpu" : "Nema na zalihi"}
+                    </>
+                  )}
+                </Button>
+                <WishlistButton
+                  productId={product.id}
+                  size="lg"
+                  className="h-12 w-12 shadow-md border border-gray-200"
+                />
+              </div>
             </div>
 
             {/* Stock Status Indicator */}
@@ -452,6 +520,15 @@ function ProductDetailPage() {
             </div>
           </div>
         )}
+
+        {/* Recommended Products */}
+        <div ref={recommendationsRef} className="mt-12 lg:mt-16 pt-8 border-t border-gray-200">
+          <RecommendationCarousel
+            title={recommendationTitle}
+            products={recommendedProducts}
+            loading={recommendationsLoading}
+          />
+        </div>
 
         {/* Bottom padding for mobile sticky bar */}
         <div className="h-20 lg:hidden" />

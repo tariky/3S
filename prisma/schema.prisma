@@ -161,6 +161,7 @@ model Product {
   tags              ProductTagsToProduct[]
   inventoryTracking InventoryTracking[]
   collectionProducts CollectionProduct[]
+  wishlistItems     WishlistItem[]
 
   @@index([slug], map: "products_slug_idx")
   @@index([status], map: "products_status_idx")
@@ -409,6 +410,7 @@ model Customer {
   addresses  Address[]
   metafields CustomerMetafield[]
   carts      Cart[]
+  wishlists  Wishlist[]
 
   @@index([email], map: "customers_email_idx")
   @@index([status], map: "customers_status_idx")
@@ -477,17 +479,21 @@ model Order {
   cancelledAt       DateTime? @map("cancelled_at") @db.Timestamp(3)
   cancelledReason   String?   @map("cancelled_reason") @db.Text
   trackingNumber    String?   @map("tracking_number") @db.VarChar(255)
+  discountId        String?   @map("discount_id") @db.VarChar(36)
+  discountCode      String?   @map("discount_code") @db.VarChar(100)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  customer   Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  items      OrderItem[]
-  metafields OrderMetafield[]
-  addresses  Address[]
+  customer     Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  usedDiscount Discount?        @relation(fields: [discountId], references: [id], onDelete: SetNull)
+  items        OrderItem[]
+  metafields   OrderMetafield[]
+  addresses    Address[]
 
   @@index([orderNumber], map: "orders_orderNumber_idx")
   @@index([customerId], map: "orders_customerId_idx")
   @@index([status], map: "orders_status_idx")
+  @@index([discountId], map: "orders_discountId_idx")
   @@map("orders")
 }
 
@@ -547,7 +553,8 @@ model Discount {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  carts Cart[]
+  carts  Cart[]
+  orders Order[]
 
   @@index([code], map: "discounts_code_idx")
   @@index([active], map: "discounts_active_idx")
@@ -728,4 +735,35 @@ model CollectionProduct {
   @@index([productId], map: "collection_products_productId_idx")
   @@index([position], map: "collection_products_position_idx")
   @@map("collection_products")
+}
+
+model Wishlist {
+  id         String   @id @db.VarChar(36)
+  customerId String?  @map("customer_id") @db.VarChar(36)
+  sessionId  String?  @map("session_id") @db.VarChar(255)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  customer Customer?      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  items    WishlistItem[]
+
+  @@index([customerId], map: "wishlist_customerId_idx")
+  @@index([sessionId], map: "wishlist_sessionId_idx")
+  @@map("wishlist")
+}
+
+model WishlistItem {
+  id         String   @id @db.VarChar(36)
+  wishlistId String   @map("wishlist_id") @db.VarChar(36)
+  productId  String   @map("product_id") @db.VarChar(36)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  wishlist Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([wishlistId, productId])
+  @@index([wishlistId], map: "wishlist_items_wishlistId_idx")
+  @@index([productId], map: "wishlist_items_productId_idx")
+  @@map("wishlist_items")
 }

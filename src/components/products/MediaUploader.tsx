@@ -22,6 +22,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useState, useEffect, useId } from "react";
 import { createMediaServerFn } from "@/queries/products";
+import { ProxyImage } from "@/components/ui/proxy-image";
 
 export interface MediaItem {
 	id: string;
@@ -80,9 +81,12 @@ function SortableMediaItem({
 				item.isPrimary ? "border-primary" : "border-gray-200"
 			)}
 		>
-			<img
+			<ProxyImage
 				src={item.url}
 				alt={item.originalFilename}
+				width={200}
+				height={200}
+				resizingType="fill"
 				className="w-full h-full object-cover"
 			/>
 			<div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center">

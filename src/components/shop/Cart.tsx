@@ -18,6 +18,7 @@ import { useCartSession } from "@/hooks/useCartSession";
 import { ShoppingBag, Plus, Minus, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "@tanstack/react-router";
+import { ProxyImage } from "@/components/ui/proxy-image";
 
 interface CartItem {
 	id: string;
@@ -167,9 +168,12 @@ export function Cart({ open, onOpenChange }: CartProps) {
 													className="relative w-[88px] h-[110px] flex-shrink-0 rounded-lg overflow-hidden bg-gray-50 group"
 												>
 													{item.image ? (
-														<img
+														<ProxyImage
 															src={item.image}
 															alt={item.product?.name || "Product"}
+															width={88}
+															height={110}
+															resizingType="fill"
 															className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
 														/>
 													) : (

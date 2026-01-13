@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { X, Loader2 } from "lucide-react";
+import { ProxyImage } from "@/components/ui/proxy-image";
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { getActiveShippingMethodsQueryOptions } from "@/queries/shipping-methods";
@@ -394,9 +395,12 @@ function RouteComponent() {
                 <div key={item.id} className="flex items-center gap-2 w-full">
                   <div className="flex gap-3 w-full">
                     <div className="relative">
-                      <img
+                      <ProxyImage
                         src={item.image || "https://via.placeholder.com/64"}
                         alt={item.title}
+                        width={64}
+                        height={64}
+                        resizingType="fill"
                         className="w-16 h-16 rounded-md aspect-square object-cover"
                       />
                       <Button

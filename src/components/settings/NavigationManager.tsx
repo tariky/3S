@@ -35,6 +35,7 @@ import {
 import { useForm } from "@tanstack/react-form";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ProxyImage } from "@/components/ui/proxy-image";
 import {
 	DndContext,
 	closestCenter,
@@ -124,9 +125,11 @@ function SortableNavigationItem({
 
 				<div className="flex-1 flex items-center gap-2">
 					{item.image && (
-						<img
+						<ProxyImage
 							src={item.image}
 							alt=""
+							width={24}
+							height={24}
 							className="size-6 object-contain rounded"
 						/>
 					)}
@@ -224,9 +227,11 @@ function NavImageUpload({
 		<div className="flex flex-col gap-2">
 			{value ? (
 				<div className="relative inline-flex items-center gap-3 p-3 border rounded-lg bg-gray-50">
-					<img
+					<ProxyImage
 						src={value}
 						alt="Nav icon"
+						width={40}
+						height={40}
 						className="size-10 object-contain"
 					/>
 					<span className="text-sm text-gray-600 truncate max-w-[200px]">

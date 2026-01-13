@@ -75,15 +75,29 @@ const data = {
 		},
 		{
 			title: "Popusti",
-			url: "#",
+			url: "/admin/discounts",
 			icon: Percent,
-			items: [],
+			items: [
+				{
+					title: "Svi popusti",
+					url: "/admin/discounts",
+				},
+				{
+					title: "Novi popust",
+					url: "/admin/discounts/new",
+				},
+			],
 		},
 		{
 			title: "Analitika",
 			url: "#",
 			icon: ChartColumn,
-			items: [],
+			items: [
+				{
+					title: "Lista želja",
+					url: "/admin/analytics/wishlist",
+				},
+			],
 		},
 		{
 			title: "Stranice",

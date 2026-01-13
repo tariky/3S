@@ -23,8 +23,17 @@ import {
 } from "@/components/ui/card";
 import { ColorPicker, BG_COLORS, TEXT_COLORS } from "@/components/ui/color-picker";
 import { IconPicker, renderIcon } from "@/components/ui/icon-picker";
-import { Loader2, Upload, X } from "lucide-react";
+import { Loader2, Upload, X, RefreshCw, CheckCircle2, XCircle, Database, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ProxyImage } from "@/components/ui/proxy-image";
+import {
+	checkTypesenseStatusServerFn,
+	fullTypesenseSyncServerFn,
+} from "@/queries/typesense";
+import {
+	checkGorseStatusServerFn,
+	syncAllItemsToGorseServerFn,
+} from "@/queries/gorse";
 
 export const Route = createFileRoute("/admin/shop")({
 	component: ShopSettingsPage,
@@ -484,7 +493,321 @@ function ShopSettingsPage() {
 					</Button>
 				</div>
 			</form>
+
+			{/* Typesense Search Section - Outside form */}
+			<TypesenseSyncSection />
+
+			{/* Gorse Recommendations Section - Outside form */}
+			<GorseSyncSection />
 		</div>
+	);
+}
+
+function TypesenseSyncSection() {
+	const { data: status, isLoading: isLoadingStatus, refetch: refetchStatus } = useQuery({
+		queryKey: ["typesense-status"],
+		queryFn: async () => {
+			return await checkTypesenseStatusServerFn();
+		},
+	});
+
+	const syncMutation = useMutation({
+		mutationFn: async () => {
+			return await fullTypesenseSyncServerFn();
+		},
+		onSuccess: () => {
+			refetchStatus();
+		},
+	});
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle className="flex items-center gap-2">
+					<Database className="size-5" />
+					Typesense Pretraga
+				</CardTitle>
+				<CardDescription>
+					Sinkronizacija kataloga proizvoda sa Typesense pretraživačem
+				</CardDescription>
+			</CardHeader>
+			<CardContent className="flex flex-col gap-4">
+				{/* Status Display */}
+				<div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+					<div className="flex flex-col gap-1">
+						<span className="text-sm font-medium">Status konekcije</span>
+						{isLoadingStatus ? (
+							<div className="flex items-center gap-2 text-muted-foreground">
+								<Loader2 className="size-4 animate-spin" />
+								<span className="text-sm">Provjera...</span>
+							</div>
+						) : status?.configured ? (
+							<div className="flex items-center gap-2">
+								{status.connected ? (
+									<>
+										<CheckCircle2 className="size-4 text-green-600" />
+										<span className="text-sm text-green-600">Povezano</span>
+									</>
+								) : (
+									<>
+										<XCircle className="size-4 text-red-600" />
+										<span className="text-sm text-red-600">Nije povezano</span>
+									</>
+								)}
+							</div>
+						) : (
+							<div className="flex items-center gap-2 text-orange-600">
+								<XCircle className="size-4" />
+								<span className="text-sm">Nije konfigurisano</span>
+							</div>
+						)}
+					</div>
+					{status?.configured && status?.connected && (
+						<div className="text-right">
+							<span className="text-2xl font-bold">{status.documentCount || 0}</span>
+							<span className="text-sm text-muted-foreground ml-1">proizvoda</span>
+						</div>
+					)}
+				</div>
+
+				{/* Configuration Notice */}
+				{!status?.configured && (
+					<div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+						<p className="text-sm text-orange-800">
+							Typesense nije konfigurisan. Dodajte <code className="bg-orange-100 px-1 rounded">TYPESENSE_URL</code> i{" "}
+							<code className="bg-orange-100 px-1 rounded">TYPESENSE_TOKEN</code> u vaš .env fajl.
+						</p>
+					</div>
+				)}
+
+				{/* Sync Result */}
+				{syncMutation.isSuccess && syncMutation.data && (
+					<div className={cn(
+						"p-4 border rounded-lg",
+						syncMutation.data.failed > 0
+							? "bg-orange-50 border-orange-200"
+							: "bg-green-50 border-green-200"
+					)}>
+						<p className={cn(
+							"text-sm font-medium",
+							syncMutation.data.failed > 0 ? "text-orange-800" : "text-green-800"
+						)}>
+							{syncMutation.data.failed > 0 ? "Sinkronizacija djelomično uspješna" : "Sinkronizacija uspješna!"}
+						</p>
+						<p className="text-sm text-gray-700 mt-1">
+							Sinhronizirano: {syncMutation.data.synced} / {syncMutation.data.total} proizvoda
+							{syncMutation.data.failed > 0 && (
+								<span className="text-orange-600 ml-2">
+									(neuspješno: {syncMutation.data.failed})
+								</span>
+							)}
+						</p>
+						{syncMutation.data.errors && syncMutation.data.errors.length > 0 && (
+							<div className="mt-2 p-2 bg-white rounded border border-orange-200">
+								<p className="text-xs font-medium text-orange-800 mb-1">Greške:</p>
+								<ul className="text-xs text-orange-700 space-y-0.5">
+									{syncMutation.data.errors.map((err: string, idx: number) => (
+										<li key={idx} className="font-mono truncate">{err}</li>
+									))}
+								</ul>
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* Sync Error */}
+				{syncMutation.isError && (
+					<div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+						<p className="text-sm text-red-800">
+							Greška pri sinkronizaciji: {syncMutation.error?.message || "Nepoznata greška"}
+						</p>
+					</div>
+				)}
+
+				{/* Sync Button */}
+				<div className="flex items-center justify-between">
+					<div className="text-sm text-muted-foreground">
+						Puna sinkronizacija će obrisati postojeći indeks i ponovo sinhronizovati sve aktivne proizvode.
+					</div>
+					<Button
+						type="button"
+						variant="outline"
+						onClick={() => syncMutation.mutate()}
+						disabled={!status?.configured || syncMutation.isPending}
+					>
+						{syncMutation.isPending ? (
+							<>
+								<Loader2 className="size-4 animate-spin mr-2" />
+								Sinkronizacija...
+							</>
+						) : (
+							<>
+								<RefreshCw className="size-4 mr-2" />
+								Puna sinkronizacija
+							</>
+						)}
+					</Button>
+				</div>
+			</CardContent>
+		</Card>
+	);
+}
+
+function GorseSyncSection() {
+	const { data: status, isLoading: isLoadingStatus, refetch: refetchStatus } = useQuery({
+		queryKey: ["gorse-status"],
+		queryFn: async () => {
+			return await checkGorseStatusServerFn();
+		},
+	});
+
+	const syncMutation = useMutation({
+		mutationFn: async () => {
+			return await syncAllItemsToGorseServerFn({ data: {} });
+		},
+		onSuccess: () => {
+			refetchStatus();
+		},
+	});
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle className="flex items-center gap-2">
+					<Sparkles className="size-5" />
+					Gorse Preporuke
+				</CardTitle>
+				<CardDescription>
+					Sinkronizacija proizvoda sa Gorse sistemom za preporuke
+				</CardDescription>
+			</CardHeader>
+			<CardContent className="flex flex-col gap-4">
+				{/* Status Display */}
+				<div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+					<div className="flex flex-col gap-1">
+						<span className="text-sm font-medium">Status konekcije</span>
+						{isLoadingStatus ? (
+							<div className="flex items-center gap-2 text-muted-foreground">
+								<Loader2 className="size-4 animate-spin" />
+								<span className="text-sm">Provjera...</span>
+							</div>
+						) : status?.configured ? (
+							<div className="flex items-center gap-2">
+								{status.connected ? (
+									<>
+										<CheckCircle2 className="size-4 text-green-600" />
+										<span className="text-sm text-green-600">Povezano</span>
+									</>
+								) : (
+									<>
+										<XCircle className="size-4 text-red-600" />
+										<span className="text-sm text-red-600">Nije povezano</span>
+									</>
+								)}
+							</div>
+						) : (
+							<div className="flex items-center gap-2 text-orange-600">
+								<XCircle className="size-4" />
+								<span className="text-sm">Nije konfigurisano</span>
+							</div>
+						)}
+					</div>
+					{status?.configured && status?.connected && (
+						<div className="text-right">
+							<span className="text-2xl font-bold">{status.itemCount || 0}</span>
+							<span className="text-sm text-muted-foreground ml-1">proizvoda</span>
+						</div>
+					)}
+				</div>
+
+				{/* Configuration Notice */}
+				{!status?.configured && (
+					<div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+						<p className="text-sm text-orange-800">
+							Gorse nije konfigurisan. Dodajte <code className="bg-orange-100 px-1 rounded">GORSE_URL</code> i{" "}
+							<code className="bg-orange-100 px-1 rounded">GORSE_TOKEN</code> u vaš .env fajl.
+						</p>
+					</div>
+				)}
+
+				{/* Sync Result */}
+				{syncMutation.isSuccess && syncMutation.data && (
+					<div className={cn(
+						"p-4 border rounded-lg",
+						syncMutation.data.failed > 0
+							? "bg-orange-50 border-orange-200"
+							: "bg-green-50 border-green-200"
+					)}>
+						<p className={cn(
+							"text-sm font-medium",
+							syncMutation.data.failed > 0 ? "text-orange-800" : "text-green-800"
+						)}>
+							{syncMutation.data.failed > 0 ? "Sinkronizacija djelomično uspješna" : "Sinkronizacija uspješna!"}
+						</p>
+						<p className="text-sm text-gray-700 mt-1">
+							Sinhronizirano: {syncMutation.data.synced} / {syncMutation.data.total} proizvoda
+							{syncMutation.data.failed > 0 && (
+								<span className="text-orange-600 ml-2">
+									(neuspješno: {syncMutation.data.failed})
+								</span>
+							)}
+						</p>
+						{syncMutation.data.errors && syncMutation.data.errors.length > 0 && (
+							<div className="mt-2 p-2 bg-white rounded border border-orange-200">
+								<p className="text-xs font-medium text-orange-800 mb-1">Greške:</p>
+								<ul className="text-xs text-orange-700 space-y-0.5">
+									{syncMutation.data.errors.map((err: string, idx: number) => (
+										<li key={idx} className="font-mono truncate">{err}</li>
+									))}
+								</ul>
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* Sync Error */}
+				{syncMutation.isError && (
+					<div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+						<p className="text-sm text-red-800">
+							Greška pri sinkronizaciji: {syncMutation.error?.message || "Nepoznata greška"}
+						</p>
+					</div>
+				)}
+
+				{/* Info about auto-sync */}
+				<div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+					<p className="text-sm text-blue-800">
+						Proizvodi se automatski sinkroniziraju sa Gorse sistemom prilikom kreiranja, ažuriranja ili brisanja.
+						Koristite punu sinkronizaciju samo za inicijalnu postavku ili oporavak.
+					</p>
+				</div>
+
+				{/* Sync Button */}
+				<div className="flex items-center justify-between">
+					<div className="text-sm text-muted-foreground">
+						Puna sinkronizacija će ponovo sinhronizovati sve aktivne proizvode.
+					</div>
+					<Button
+						type="button"
+						variant="outline"
+						onClick={() => syncMutation.mutate()}
+						disabled={!status?.configured || syncMutation.isPending}
+					>
+						{syncMutation.isPending ? (
+							<>
+								<Loader2 className="size-4 animate-spin mr-2" />
+								Sinkronizacija...
+							</>
+						) : (
+							<>
+								<RefreshCw className="size-4 mr-2" />
+								Puna sinkronizacija
+							</>
+						)}
+					</Button>
+				</div>
+			</CardContent>
+		</Card>
 	);
 }
 
@@ -513,9 +836,10 @@ function LogoPreview({ url, width }: { url: string; width: number }) {
 	}
 
 	return (
-		<img
+		<ProxyImage
 			src={url}
 			alt="Logo preview"
+			width={width}
 			style={{ width: `${width}px`, height: "auto" }}
 		/>
 	);
@@ -560,9 +884,11 @@ function ImageUploadField({
 		<div className="flex flex-col gap-2">
 			{value ? (
 				<div className="relative w-full h-32 border rounded-md overflow-hidden bg-gray-50">
-					<img
+					<ProxyImage
 						src={value}
 						alt={placeholder}
+						width={300}
+						height={128}
 						className="w-full h-full object-contain"
 					/>
 					<button

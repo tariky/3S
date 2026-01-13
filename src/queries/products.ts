@@ -9,6 +9,69 @@ import {
 	markCollectionsForRegeneration,
 	markAllRuleBasedCollectionsForRegeneration,
 } from "@/queries/collections";
+import { isGorseConfigured, upsertItem, deleteItem } from "@/lib/gorse";
+
+// Helper to sync product to Gorse
+async function syncProductToGorse(productId: string) {
+	if (!isGorseConfigured()) return;
+
+	try {
+		const product = await db.product.findUnique({
+			where: { id: productId },
+			include: {
+				category: true,
+				vendor: true,
+				tags: { include: { tag: true } },
+				collectionProducts: { include: { collection: true } },
+				variants: { include: { inventory: true } },
+			},
+		});
+
+		if (!product) return;
+
+		// Calculate total available inventory
+		const totalAvailable = product.variants.reduce(
+			(sum, v) => sum + (v.inventory?.available || 0),
+			0
+		);
+
+		// Build categories array
+		const categories: string[] = [];
+		if (product.category?.slug) categories.push(product.category.slug);
+		product.collectionProducts.forEach((cp) => {
+			if (cp.collection?.slug) categories.push(cp.collection.slug);
+		});
+
+		// Build labels array
+		const labels: string[] = [];
+		product.tags.forEach((t) => {
+			if (t.tag?.name) labels.push(t.tag.name);
+		});
+		if (product.vendor?.name) labels.push(product.vendor.name);
+
+		await upsertItem({
+			ItemId: product.id,
+			IsHidden: product.status !== "active" || totalAvailable <= 0,
+			Categories: categories,
+			Labels: labels,
+			Timestamp: product.createdAt.toISOString(),
+			Comment: product.name,
+		});
+	} catch (error) {
+		console.error("Failed to sync product to Gorse:", error);
+	}
+}
+
+// Helper to delete product from Gorse
+async function deleteProductFromGorse(productId: string) {
+	if (!isGorseConfigured()) return;
+
+	try {
+		await deleteItem(productId);
+	} catch (error) {
+		console.error("Failed to delete product from Gorse:", error);
+	}
+}
 
 export const PRODUCTS_QUERY_KEY = "products";
 
@@ -339,9 +402,9 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 						id: variantId,
 						productId,
 						sku: variantSku,
-						price: generatedVariant.price ? Number(generatedVariant.price) : null,
-						compareAtPrice: generatedVariant.compareAtPrice ? Number(generatedVariant.compareAtPrice) : null,
-						cost: generatedVariant.cost ? Number(generatedVariant.cost) : null,
+						price: generatedVariant.price && Number(generatedVariant.price) > 0 ? Number(generatedVariant.price) : null,
+						compareAtPrice: generatedVariant.compareAtPrice && Number(generatedVariant.compareAtPrice) > 0 ? Number(generatedVariant.compareAtPrice) : null,
+						cost: generatedVariant.cost && Number(generatedVariant.cost) > 0 ? Number(generatedVariant.cost) : null,
 						position: generatedVariant.position,
 						isDefault: generatedVariant.position === 0,
 					},
@@ -436,6 +499,9 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 			// New active product could match any rule-based collection
 			await markAllRuleBasedCollectionsForRegeneration();
 		}
+
+		// Sync to Gorse recommendation engine
+		await syncProductToGorse(productId);
 
 		return serializeData(createdProduct);
 	});
@@ -919,9 +985,9 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 						id: variantId,
 						productId,
 						sku: variantSku,
-						price: generatedVariant.price ? Number(generatedVariant.price) : null,
-						compareAtPrice: generatedVariant.compareAtPrice ? Number(generatedVariant.compareAtPrice) : null,
-						cost: generatedVariant.cost ? Number(generatedVariant.cost) : null,
+						price: generatedVariant.price && Number(generatedVariant.price) > 0 ? Number(generatedVariant.price) : null,
+						compareAtPrice: generatedVariant.compareAtPrice && Number(generatedVariant.compareAtPrice) > 0 ? Number(generatedVariant.compareAtPrice) : null,
+						cost: generatedVariant.cost && Number(generatedVariant.cost) > 0 ? Number(generatedVariant.cost) : null,
 						position: generatedVariant.position,
 						isDefault: generatedVariant.position === 0,
 					},
@@ -1050,6 +1116,9 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 			await markCollectionsForRegeneration(changedFields, "product");
 		}
 
+		// Sync to Gorse recommendation engine
+		await syncProductToGorse(productId);
+
 		const updatedProduct = await getProductByIdServerFn({
 			data: { productId },
 		});
@@ -1120,13 +1189,13 @@ export const updateVariantServerFn = createServerFn({ method: "POST" })
 		const updateFields: any = {};
 		if (updateData.sku !== undefined) updateFields.sku = updateData.sku;
 		if (updateData.price !== undefined)
-			updateFields.price = updateData.price ? Number(updateData.price) : null;
+			updateFields.price = updateData.price && Number(updateData.price) > 0 ? Number(updateData.price) : null;
 		if (updateData.compareAtPrice !== undefined)
-			updateFields.compareAtPrice = updateData.compareAtPrice
+			updateFields.compareAtPrice = updateData.compareAtPrice && Number(updateData.compareAtPrice) > 0
 				? Number(updateData.compareAtPrice)
 				: null;
 		if (updateData.cost !== undefined)
-			updateFields.cost = updateData.cost ? Number(updateData.cost) : null;
+			updateFields.cost = updateData.cost && Number(updateData.cost) > 0 ? Number(updateData.cost) : null;
 		if (updateData.weight !== undefined)
 			updateFields.weight = updateData.weight ? Number(updateData.weight) : null;
 		if (updateData.barcode !== undefined) updateFields.barcode = updateData.barcode;
@@ -1160,6 +1229,9 @@ export const deleteProductServerFn = createServerFn({ method: "POST" })
 		if (product?.status === "active") {
 			await markAllRuleBasedCollectionsForRegeneration();
 		}
+
+		// Remove from Gorse recommendation engine
+		await deleteProductFromGorse(data.id);
 
 		return {
 			success: true,

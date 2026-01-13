@@ -5,6 +5,64 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import { authMiddleware } from "@/utils/auth-middleware";
 import { markCollectionsForRegeneration } from "@/queries/collections";
+import { isGorseConfigured, upsertItem } from "@/lib/gorse";
+
+// Helper to sync product to Gorse after inventory changes
+async function syncProductToGorseAfterInventoryChange(productId: string) {
+  if (!isGorseConfigured()) return;
+
+  try {
+    const product = await db.product.findUnique({
+      where: { id: productId },
+      include: {
+        category: true,
+        vendor: true,
+        tags: { include: { tag: true } },
+        collectionProducts: { include: { collection: true } },
+        variants: { include: { inventory: true } },
+      },
+    });
+
+    if (!product) return;
+
+    // Calculate total available inventory
+    const totalAvailable = product.variants.reduce(
+      (sum, v) => sum + (v.inventory?.available || 0),
+      0
+    );
+
+    // Build categories array
+    const categories: string[] = [];
+    if (product.category?.slug) categories.push(product.category.slug);
+    product.collectionProducts.forEach((cp) => {
+      if (cp.collection?.slug) categories.push(cp.collection.slug);
+    });
+
+    // Build labels array
+    const labels: string[] = [];
+    product.tags.forEach((t) => {
+      if (t.tag?.name) labels.push(t.tag.name);
+    });
+    if (product.vendor?.name) labels.push(product.vendor.name);
+
+    await upsertItem({
+      ItemId: product.id,
+      IsHidden: product.status !== "active" || totalAvailable <= 0,
+      Categories: categories,
+      Labels: labels,
+      Timestamp: product.createdAt.toISOString(),
+      Comment: product.name,
+    });
+  } catch (error) {
+    console.error("Failed to sync product to Gorse after inventory change:", error);
+  }
+}
+
+// Helper to sync multiple products to Gorse
+async function syncProductsToGorse(productIds: string[]) {
+  const uniqueIds = [...new Set(productIds.filter(Boolean))];
+  await Promise.all(uniqueIds.map(syncProductToGorseAfterInventoryChange));
+}
 
 export const ORDERS_QUERY_KEY = "orders";
 
@@ -106,6 +164,8 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
       shipping: z.number().optional().default(0),
       discount: z.number().optional().default(0),
       total: z.number(),
+      discountId: z.string().optional().nullable(),
+      discountCode: z.string().optional().nullable(),
       note: z.string().optional(),
       billingAddress: z
         .object({
@@ -167,6 +227,8 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
         shipping: (data.shipping || 0).toString(),
         discount: (data.discount || 0).toString(),
         total: data.total.toString(),
+        discountId: data.discountId || null,
+        discountCode: data.discountCode || null,
         note: data.note || null,
       },
     });
@@ -197,6 +259,7 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
     }
 
     // Create order items and reserve inventory
+    const affectedProductIds: string[] = [];
     if (data.items.length > 0) {
       const itemsToInsert = data.items.map((item) => ({
         id: nanoid(),
@@ -263,12 +326,20 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
                 userId: null, // You can add user tracking later
               },
             });
+
+            // Track affected product for Gorse sync
+            if (item.productId) {
+              affectedProductIds.push(item.productId);
+            }
           }
         }
       }
 
       // Mark collections with inventory rules for regeneration
       await markCollectionsForRegeneration(["inventory"], "product");
+
+      // Sync affected products to Gorse (in case they went out of stock)
+      await syncProductsToGorse(affectedProductIds);
     }
 
     // Create addresses if provided
@@ -542,6 +613,9 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
+    // Track affected products for Gorse sync
+    const affectedProductIds: string[] = [];
+
     // Get existing order items to calculate inventory changes
     const existingItems = await db.orderItem.findMany({
       where: { orderId: data.orderId },
@@ -612,6 +686,11 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
                 userId: null,
               },
             });
+
+            // Track affected product for Gorse sync
+            if (existingItem.productId) {
+              affectedProductIds.push(existingItem.productId);
+            }
           }
         } else if (newItem.quantity !== existingItem.quantity) {
           // Quantity changed - adjust reserved inventory
@@ -672,6 +751,11 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
                 userId: null,
               },
             });
+
+            // Track affected product for Gorse sync
+            if (existingItem.productId) {
+              affectedProductIds.push(existingItem.productId);
+            }
           }
         }
       }
@@ -732,6 +816,11 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
                 userId: null,
               },
             });
+
+            // Track affected product for Gorse sync
+            if (newItem.productId) {
+              affectedProductIds.push(newItem.productId);
+            }
           }
         }
         // If item exists, quantity changes were handled above
@@ -777,6 +866,9 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
     // Mark collections with inventory rules for regeneration
     await markCollectionsForRegeneration(["inventory"], "product");
 
+    // Sync affected products to Gorse (in case they went out of stock or back in stock)
+    await syncProductsToGorse(affectedProductIds);
+
     // Fetch and return updated order
     return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));
   });
@@ -790,6 +882,9 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
+    // Track affected products for Gorse sync
+    const affectedProductIds: string[] = [];
+
     // Fetch order items before cancelling
     const orderData = await getOrderByIdServerFn({
       data: { orderId: data.orderId },
@@ -839,6 +934,11 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
                 userId: null,
               },
             });
+
+            // Track affected product for Gorse sync
+            if (item.productId) {
+              affectedProductIds.push(item.productId);
+            }
           }
         }
       }
@@ -884,6 +984,9 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
     // Mark collections with inventory rules for regeneration
     await markCollectionsForRegeneration(["inventory"], "product");
 
+    // Sync affected products to Gorse (products may be back in stock after cancellation)
+    await syncProductsToGorse(affectedProductIds);
+
     // Fetch and return updated order
     return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));
   });
@@ -925,6 +1028,9 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
+    // Track affected products for Gorse sync
+    const affectedProductIds: string[] = [];
+
     // Fetch order with items
     const orderData = await getOrderByIdServerFn({
       data: { orderId: data.orderId },
@@ -1000,6 +1106,11 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
           userId: null, // You can add user tracking later
         },
       });
+
+      // Track affected product for Gorse sync
+      if (item.productId) {
+        affectedProductIds.push(item.productId);
+      }
     }
 
     // Update order fulfillment status, payment status, order status, and tracking number
@@ -1019,6 +1130,9 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
 
     // Mark collections with inventory rules for regeneration (inventory was decreased)
     await markCollectionsForRegeneration(["inventory"], "product");
+
+    // Sync affected products to Gorse (products may be out of stock after fulfillment)
+    await syncProductsToGorse(affectedProductIds);
 
     // Fetch and return updated order
     return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));

@@ -4,6 +4,7 @@ import * as React from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { ChevronLeft, ChevronRight, X, ZoomIn } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ProxyImage } from "@/components/ui/proxy-image";
 import {
 	Dialog,
 	DialogContent,
@@ -142,11 +143,13 @@ export function ProductImageCarousel({
 								className="flex-[0_0_100%] min-w-0 relative aspect-square cursor-zoom-in"
 								onClick={() => setLightboxOpen(true)}
 							>
-								<img
+								<ProxyImage
 									src={image.url}
 									alt={image.alt || `${productName} - Image ${index + 1}`}
+									width={800}
+									height={800}
+									resizingType="fill"
 									className="w-full h-full object-cover"
-									loading={index === 0 ? "eager" : "lazy"}
 								/>
 								{/* Zoom indicator */}
 								<div className="absolute bottom-4 right-4 bg-white/80 backdrop-blur-sm rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -221,11 +224,13 @@ export function ProductImageCarousel({
 								aria-label={`View image ${index + 1}`}
 								aria-selected={index === selectedIndex}
 							>
-								<img
+								<ProxyImage
 									src={image.url}
 									alt=""
+									width={80}
+									height={80}
+									resizingType="fill"
 									className="w-full h-full object-cover"
-									loading="lazy"
 								/>
 							</button>
 						))}
@@ -252,9 +257,12 @@ export function ProductImageCarousel({
 									key={index}
 									className="flex-[0_0_100%] min-w-0 h-full flex items-center justify-center p-4"
 								>
-									<img
+									<ProxyImage
 										src={image.url}
 										alt={image.alt || `${productName} - Image ${index + 1}`}
+										width={1200}
+										height={1200}
+										quality={90}
 										className="max-w-full max-h-full object-contain"
 									/>
 								</div>

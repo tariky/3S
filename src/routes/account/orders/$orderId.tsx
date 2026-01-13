@@ -13,6 +13,7 @@ import {
 	MapPin,
 	Phone,
 } from "lucide-react";
+import { ProxyImage } from "@/components/ui/proxy-image";
 
 export const Route = createFileRoute("/account/orders/$orderId")({
 	component: OrderDetailPage,
@@ -223,9 +224,12 @@ function OrderDetailPage() {
 									className="flex items-start gap-4 pb-4 border-b border-gray-200 last:border-0"
 								>
 									{item.imageUrl && (
-										<img
+										<ProxyImage
 											src={item.imageUrl}
 											alt={item.title}
+											width={80}
+											height={80}
+											resizingType="fill"
 											className="w-20 h-20 object-cover rounded-md"
 										/>
 									)}

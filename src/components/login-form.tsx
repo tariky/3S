@@ -24,6 +24,7 @@ import { authClient } from "@/lib/auth-client";
 import { getUserRoleServerFn } from "@/server/auth.server";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { mergeCartsMutationOptions, CART_QUERY_KEY } from "@/queries/cart";
+import { mergeWishlistsMutationOptions, WISHLIST_QUERY_KEY } from "@/queries/wishlist";
 import { useCartSession } from "@/hooks/useCartSession";
 
 interface User {
@@ -46,6 +47,7 @@ export function LoginForm({
   const { sessionId, clearSession } = useCartSession();
   const queryClient = useQueryClient();
   const mergeCartsMutation = useMutation(mergeCartsMutationOptions());
+  const mergeWishlistsMutation = useMutation(mergeWishlistsMutationOptions());
   const formOpts = formOptions({
     defaultValues: defaultUser,
   });
@@ -66,7 +68,7 @@ export function LoginForm({
       } else {
         const userId = response.data?.user.id!;
         
-        // Merge guest cart with user cart if guest session exists
+        // Merge guest cart and wishlist with user if guest session exists
         if (sessionId) {
           try {
             await mergeCartsMutation.mutateAsync({
@@ -74,10 +76,21 @@ export function LoginForm({
               userId,
             });
             queryClient.invalidateQueries({ queryKey: [CART_QUERY_KEY] });
-            clearSession();
           } catch (error) {
             console.error("Error merging carts:", error);
           }
+
+          try {
+            await mergeWishlistsMutation.mutateAsync({
+              guestSessionId: sessionId,
+              userId,
+            });
+            queryClient.invalidateQueries({ queryKey: [WISHLIST_QUERY_KEY] });
+          } catch (error) {
+            console.error("Error merging wishlists:", error);
+          }
+
+          clearSession();
         }
 
         const userRole = await getUserRoleServerFn({

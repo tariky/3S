@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Menu, X, ChevronDown, User, LogOut, Package } from "lucide-react";
+import { Menu, X, ChevronDown, User, LogOut, Package, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { NavigationItem } from "@/queries/navigation";
 import type { ShopSettings } from "@/queries/settings";
 import { cn } from "@/lib/utils";
 import { CartButton } from "./CartButton";
 import { Cart } from "./Cart";
+import { SearchDialog } from "./SearchDialog";
 import { authClient } from "@/lib/auth-client";
 import {
   DropdownMenu,
@@ -18,8 +19,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import * as LucideIcons from "lucide-react";
+import { ProxyImage } from "@/components/ui/proxy-image";
+import { fetchSvgContentServerFn } from "@/queries/images";
 
 // Get icon component by name
 function getIconComponent(
@@ -47,8 +49,7 @@ function ShopLogo({
 
   React.useEffect(() => {
     if (isSvg) {
-      fetch(url)
-        .then((res) => res.text())
+      fetchSvgContentServerFn({ data: { url } })
         .then((text) => setSvgContent(text))
         .catch(() => setSvgContent(null));
     }
@@ -65,9 +66,10 @@ function ShopLogo({
   }
 
   return (
-    <img
+    <ProxyImage
       src={url}
       alt={alt}
+      width={width}
       style={{ width: `${width}px`, height: "auto" }}
       className="object-contain"
     />
@@ -191,20 +193,17 @@ export function ShopLayout({
 }: ShopLayoutProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [cartOpen, setCartOpen] = React.useState(false);
+  const [searchOpen, setSearchOpen] = React.useState(false);
   const [user, setUser] = React.useState<{
     name: string;
     email: string;
     id: string;
   } | null>(null);
-  const [isSessionLoading, setIsSessionLoading] = React.useState(true);
   const navigate = useNavigate();
   const routerState = useRouterState();
 
   // Function to check session
-  const checkSession = React.useCallback(async (isInitial = false) => {
-    if (isInitial) {
-      setIsSessionLoading(true);
-    }
+  const checkSession = React.useCallback(async () => {
     const session = await authClient.getSession();
     if (session?.data?.user) {
       setUser({
@@ -215,14 +214,11 @@ export function ShopLayout({
     } else {
       setUser(null);
     }
-    if (isInitial) {
-      setIsSessionLoading(false);
-    }
   }, []);
 
   // Check if user is logged in on mount and route changes
   React.useEffect(() => {
-    checkSession(true);
+    checkSession();
   }, [checkSession, routerState.location.pathname]);
 
   // Refresh session on window focus
@@ -239,6 +235,18 @@ export function ShopLayout({
     setUser(null);
     navigate({ to: "/" });
   };
+
+  // Keyboard shortcut for search (Cmd/Ctrl + K)
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -277,82 +285,77 @@ export function ShopLayout({
 
             {/* Right Side Actions */}
             <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={() => setSearchOpen(true)}
+                aria-label="Pretraži"
+              >
+                <Search className="size-5" />
+              </Button>
               <CartButton onClick={() => setCartOpen(true)} />
-              {isSessionLoading ? (
-                <div className="h-9 w-9 rounded-full bg-gray-100 animate-pulse" />
-              ) : user ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="flex items-center gap-2 h-9 px-3"
-                    >
-                      <Avatar className="h-7 w-7">
-                        <AvatarImage src="" alt={user.name} />
-                        <AvatarFallback className="text-xs">
-                          {user.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")
-                            .toUpperCase()
-                            .slice(0, 2)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="hidden sm:inline-block text-sm font-medium">
-                        {user.name.split(" ")[0]}
-                      </span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>
-                      <div className="flex flex-col space-y-1">
-                        <p className="text-sm font-medium">{user.name}</p>
-                        <p className="text-xs text-gray-500">{user.email}</p>
-                      </div>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <Link to="/account" className="flex items-center gap-2">
-                        <User className="size-4" />
-                        Moj profil
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link
-                        to="/account/orders"
-                        className="flex items-center gap-2"
-                      >
-                        <Package className="size-4" />
-                        Moje narudžbe
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleSignOut}>
-                      <LogOut className="size-4 mr-2" />
-                      Odjavi se
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
-                <>
-                  <div className="hidden sm:flex items-center gap-2">
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link to="/auth/login">Prijavi se</Link>
-                    </Button>
-                    <Button size="sm" asChild>
-                      <Link to="/auth/register">Registruj se</Link>
-                    </Button>
-                  </div>
-                  <div className="sm:hidden">
-                    <Button variant="ghost" size="icon" asChild>
-                      <Link to="/auth/login">
-                        <User className="size-5" />
-                      </Link>
-                    </Button>
-                  </div>
-                </>
-              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-9 w-9">
+                    <User className="size-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  {user ? (
+                    <>
+                      <DropdownMenuLabel>
+                        <div className="flex flex-col space-y-1">
+                          <p className="text-sm font-medium">{user.name}</p>
+                          <p className="text-xs text-gray-500">{user.email}</p>
+                        </div>
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link to="/account" className="flex items-center gap-2">
+                          <User className="size-4" />
+                          Moj profil
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          to="/account/orders"
+                          className="flex items-center gap-2"
+                        >
+                          <Package className="size-4" />
+                          Moje narudžbe
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleSignOut}>
+                        <LogOut className="size-4 mr-2" />
+                        Odjavi se
+                      </DropdownMenuItem>
+                    </>
+                  ) : (
+                    <>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          to="/auth/login"
+                          className="flex items-center gap-2"
+                        >
+                          <User className="size-4" />
+                          Prijavi se
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          to="/auth/register"
+                          className="flex items-center gap-2"
+                        >
+                          <User className="size-4" />
+                          Registruj se
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               {/* Mobile Menu Button */}
               <Button
@@ -406,13 +409,35 @@ export function ShopLayout({
                 ))}
                 {/* Auth Links in Mobile Menu */}
                 <div className="border-t border-gray-200 mt-2 pt-2">
-                  {isSessionLoading ? (
-                    <div className="px-4 py-2">
-                      <div className="h-4 w-24 bg-gray-100 animate-pulse rounded mb-2" />
-                      <div className="h-3 w-32 bg-gray-100 animate-pulse rounded" />
-                    </div>
-                  ) : user ? (
-                    <></>
+                  {user ? (
+                    <>
+                      <Link
+                        to="/account"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md"
+                      >
+                        <User className="size-4" />
+                        Moj profil
+                      </Link>
+                      <Link
+                        to="/account/orders"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md"
+                      >
+                        <Package className="size-4" />
+                        Moje narudžbe
+                      </Link>
+                      <button
+                        onClick={() => {
+                          handleSignOut();
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md w-full text-left"
+                      >
+                        <LogOut className="size-4" />
+                        Odjavi se
+                      </button>
+                    </>
                   ) : (
                     <>
                       <Link
@@ -438,6 +463,7 @@ export function ShopLayout({
           )}
         </div>
         <Cart open={cartOpen} onOpenChange={setCartOpen} />
+        <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       </nav>
       <main>{children}</main>
       <footer className="bg-gray-900 text-white mt-16">

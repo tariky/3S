@@ -19,6 +19,7 @@ import {
 import { useUploadFiles } from "@better-upload/client";
 import { UploadDropzone } from "../upload-dropzone";
 import { useQueryClient } from "@tanstack/react-query";
+import { ProxyImage } from "@/components/ui/proxy-image";
 
 function SimpleStringSlugify(value: string) {
   return value.toLowerCase().replace(/\s+/g, "-");
@@ -85,9 +86,12 @@ export function AddCategoryDialog() {
                 >
                   <TrashIcon className="w-4 h-4" />
                 </Button>
-                <img
+                <ProxyImage
                   src={imageUrl}
                   alt="Slika kategorije"
+                  width={192}
+                  height={192}
+                  resizingType="fill"
                   className="w-48 h-48 object-cover rounded-md object-center fit-contain"
                 />
               </div>

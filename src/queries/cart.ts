@@ -5,6 +5,7 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import { auth } from "@/lib/auth";
 import type { Inventory } from "@prisma/client";
+import { isGorseConfigured, insertFeedback } from "@/lib/gorse";
 
 export const CART_QUERY_KEY = "cart";
 
@@ -271,6 +272,26 @@ export const addToCartServerFn = createServerFn({ method: "POST" })
 					quantity: data.quantity,
 				},
 			});
+		}
+
+		// Track add-to-cart feedback in Gorse
+		if (isGorseConfigured()) {
+			const feedbackUserId = userId || sessionId;
+			if (feedbackUserId) {
+				try {
+					await insertFeedback([
+						{
+							FeedbackType: "cart",
+							UserId: feedbackUserId,
+							ItemId: data.productId,
+							Timestamp: new Date().toISOString(),
+						},
+					]);
+				} catch (error) {
+					// Log but don't fail the cart operation
+					console.error("Failed to track cart feedback:", error);
+				}
+			}
 		}
 
 		// Return updated cart

@@ -33,6 +33,7 @@ import {
 import { Plus, MoreHorizontal, Pencil, Trash2, Loader2, FolderKanban } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { ProxyImage } from "@/components/ui/proxy-image";
 
 export const Route = createFileRoute("/admin/collections/")({
 	component: CollectionsPage,
@@ -112,9 +113,12 @@ function CollectionsPage() {
 									<TableCell>
 										<div className="flex items-center gap-3">
 											{collection.image ? (
-												<img
+												<ProxyImage
 													src={collection.image}
 													alt={collection.name}
+													width={40}
+													height={40}
+													resizingType="fill"
 													className="w-10 h-10 rounded object-cover"
 												/>
 											) : (
