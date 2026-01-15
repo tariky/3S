@@ -5,6 +5,49 @@ import { loginSchema, signUpSchema } from "@/schemas/auth";
 import { db } from "@/db/db";
 import { z } from "zod";
 import { nanoid } from "nanoid";
+import { sendWelcomeEmail } from "@/server/email.server";
+
+// Server function to send welcome email (callable from client, fire-and-forget)
+export const sendWelcomeEmailServerFn = createServerFn({ method: "POST" })
+	.inputValidator(
+		z.object({
+			email: z.string().email(),
+			name: z.string().min(1),
+		})
+	)
+	.handler(async ({ data }) => {
+		// Fire-and-forget - don't wait for email to send
+		sendWelcomeEmail(data.email, data.name).catch((error) => {
+			console.error("Error sending welcome email:", error);
+		});
+		return { success: true };
+	});
+
+// Check if an email already has a registered account with password
+export const checkEmailHasAccountServerFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ email: z.string().email() }))
+  .handler(async ({ data }) => {
+    const normalizedEmail = data.email.toLowerCase().trim();
+
+    // Check if user exists
+    const user = await db.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user) {
+      return { hasAccount: false };
+    }
+
+    // Check if user has a credential (password) account
+    const credentialAccount = await db.account.findFirst({
+      where: {
+        userId: user.id,
+        providerId: "credential",
+      },
+    });
+
+    return { hasAccount: !!credentialAccount };
+  });
 
 export const signInEmailServerFn = createServerFn({ method: "POST" })
   .inputValidator(loginSchema)
@@ -32,7 +75,7 @@ async function createCustomerFromUser(userEmail: string, userName: string) {
   const normalizedEmail = userEmail.toLowerCase().trim();
 
   // Check if customer already exists
-  const existingCustomer = await db.customer.findUnique({
+  const existingCustomer = await db.customers.findUnique({
     where: { email: normalizedEmail },
   });
 
@@ -46,7 +89,7 @@ async function createCustomerFromUser(userEmail: string, userName: string) {
   const firstName = nameParts[0] || null;
   const lastName = nameParts.slice(1).join(" ") || null;
 
-  await db.customer.create({
+  await db.customers.create({
     data: {
       id: customerId,
       email: normalizedEmail,
@@ -103,7 +146,12 @@ export const signUpEmailServerFn = createServerFn({ method: "POST" })
         console.error("Error creating customer record:", customerError);
         // Don't fail registration if customer creation fails
       }
-      
+
+      // Send welcome email (fire-and-forget, don't block)
+      sendWelcomeEmail(data.email, data.name).catch((emailError) => {
+        console.error("[Auth] Error sending welcome email:", emailError);
+      });
+
       return {
         success: true,
         message: "Uspješna registracija",
@@ -233,7 +281,7 @@ export const activateAccountServerFn = createServerFn({ method: "POST" })
     // User doesn't exist, create new account
     try {
       // Get customer info to use for user name
-      const customer = await db.customer.findUnique({
+      const customer = await db.customers.findUnique({
         where: { email: normalizedEmail },
       });
 

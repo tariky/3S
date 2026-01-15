@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WishlistRouteImport } from './routes/wishlist'
 import { Route as ThankYouRouteImport } from './routes/thank-you'
 import { Route as ShopRouteImport } from './routes/shop'
 import { Route as SearchRouteImport } from './routes/search'
@@ -19,24 +20,34 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AccountIndexRouteImport } from './routes/account/index'
-import { Route as ProductsCategorySlugRouteImport } from './routes/products/$categorySlug'
 import { Route as ProductSlugRouteImport } from './routes/product/$slug'
 import { Route as PageSlugRouteImport } from './routes/page/$slug'
 import { Route as CollectionSlugRouteImport } from './routes/collection/$slug'
+import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
 import { Route as AuthRegisterRouteImport } from './routes/auth/register'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
+import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-password'
 import { Route as ApiUploadRouteImport } from './routes/api/upload'
 import { Route as AdminShopRouteImport } from './routes/admin/shop'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
-import { Route as AccountOrdersRouteImport } from './routes/account/orders'
+import { Route as AdminInventoryRouteImport } from './routes/admin/inventory'
+import { Route as AdminHomepageRouteImport } from './routes/admin/homepage'
+import { Route as AdminFooterRouteImport } from './routes/admin/footer'
+import { Route as AdminEmailLogsRouteImport } from './routes/admin/email-logs'
+import { Route as AdminAbandonedCheckoutsRouteImport } from './routes/admin/abandoned-checkouts'
+import { Route as AdminPurchaseOrdersIndexRouteImport } from './routes/admin/purchase-orders/index'
 import { Route as AdminProductsIndexRouteImport } from './routes/admin/products/index'
 import { Route as AdminPagesIndexRouteImport } from './routes/admin/pages/index'
 import { Route as AdminOrdersIndexRouteImport } from './routes/admin/orders/index'
 import { Route as AdminDiscountsIndexRouteImport } from './routes/admin/discounts/index'
 import { Route as AdminCustomersIndexRouteImport } from './routes/admin/customers/index'
 import { Route as AdminCollectionsIndexRouteImport } from './routes/admin/collections/index'
+import { Route as AccountOrdersIndexRouteImport } from './routes/account/orders/index'
 import { Route as ApiCronRegenerateCollectionsRouteImport } from './routes/api/cron/regenerate-collections'
+import { Route as ApiCronAbandonedCheckoutsRouteImport } from './routes/api/cron/abandoned-checkouts'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AdminPurchaseOrdersNewRouteImport } from './routes/admin/purchase-orders/new'
+import { Route as AdminPurchaseOrdersOrderIdRouteImport } from './routes/admin/purchase-orders/$orderId'
 import { Route as AdminProductsVendorsRouteImport } from './routes/admin/products/vendors'
 import { Route as AdminProductsNewRouteImport } from './routes/admin/products/new'
 import { Route as AdminProductsDefinitionsRouteImport } from './routes/admin/products/definitions'
@@ -51,9 +62,15 @@ import { Route as AdminDiscountsDiscountIdRouteImport } from './routes/admin/dis
 import { Route as AdminCollectionsNewRouteImport } from './routes/admin/collections/new'
 import { Route as AdminCollectionsCollectionIdRouteImport } from './routes/admin/collections/$collectionId'
 import { Route as AdminAnalyticsWishlistRouteImport } from './routes/admin/analytics/wishlist'
+import { Route as AdminAnalyticsSellThroughRouteImport } from './routes/admin/analytics/sell-through'
 import { Route as AccountOrdersOrderIdRouteImport } from './routes/account/orders/$orderId'
 import { Route as AdminProductsVariantsVariantIdRouteImport } from './routes/admin/products/variants/$variantId'
 
+const WishlistRoute = WishlistRouteImport.update({
+  id: '/wishlist',
+  path: '/wishlist',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ThankYouRoute = ThankYouRouteImport.update({
   id: '/thank-you',
   path: '/thank-you',
@@ -104,11 +121,6 @@ const AccountIndexRoute = AccountIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AccountRoute,
 } as any)
-const ProductsCategorySlugRoute = ProductsCategorySlugRouteImport.update({
-  id: '/$categorySlug',
-  path: '/$categorySlug',
-  getParentRoute: () => ProductsRoute,
-} as any)
 const ProductSlugRoute = ProductSlugRouteImport.update({
   id: '/product/$slug',
   path: '/product/$slug',
@@ -124,6 +136,11 @@ const CollectionSlugRoute = CollectionSlugRouteImport.update({
   path: '/collection/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
+  id: '/auth/reset-password',
+  path: '/auth/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRegisterRoute = AuthRegisterRouteImport.update({
   id: '/auth/register',
   path: '/auth/register',
@@ -132,6 +149,11 @@ const AuthRegisterRoute = AuthRegisterRouteImport.update({
 const AuthLoginRoute = AuthLoginRouteImport.update({
   id: '/auth/login',
   path: '/auth/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
+  id: '/auth/forgot-password',
+  path: '/auth/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUploadRoute = ApiUploadRouteImport.update({
@@ -149,11 +171,37 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AdminRoute,
 } as any)
-const AccountOrdersRoute = AccountOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
-  getParentRoute: () => AccountRoute,
+const AdminInventoryRoute = AdminInventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => AdminRoute,
 } as any)
+const AdminHomepageRoute = AdminHomepageRouteImport.update({
+  id: '/homepage',
+  path: '/homepage',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFooterRoute = AdminFooterRouteImport.update({
+  id: '/footer',
+  path: '/footer',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminEmailLogsRoute = AdminEmailLogsRouteImport.update({
+  id: '/email-logs',
+  path: '/email-logs',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAbandonedCheckoutsRoute = AdminAbandonedCheckoutsRouteImport.update({
+  id: '/abandoned-checkouts',
+  path: '/abandoned-checkouts',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPurchaseOrdersIndexRoute =
+  AdminPurchaseOrdersIndexRouteImport.update({
+    id: '/purchase-orders/',
+    path: '/purchase-orders/',
+    getParentRoute: () => AdminRoute,
+  } as any)
 const AdminProductsIndexRoute = AdminProductsIndexRouteImport.update({
   id: '/products/',
   path: '/products/',
@@ -184,10 +232,21 @@ const AdminCollectionsIndexRoute = AdminCollectionsIndexRouteImport.update({
   path: '/collections/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AccountOrdersIndexRoute = AccountOrdersIndexRouteImport.update({
+  id: '/orders/',
+  path: '/orders/',
+  getParentRoute: () => AccountRoute,
+} as any)
 const ApiCronRegenerateCollectionsRoute =
   ApiCronRegenerateCollectionsRouteImport.update({
     id: '/api/cron/regenerate-collections',
     path: '/api/cron/regenerate-collections',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiCronAbandonedCheckoutsRoute =
+  ApiCronAbandonedCheckoutsRouteImport.update({
+    id: '/api/cron/abandoned-checkouts',
+    path: '/api/cron/abandoned-checkouts',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -195,6 +254,17 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminPurchaseOrdersNewRoute = AdminPurchaseOrdersNewRouteImport.update({
+  id: '/purchase-orders/new',
+  path: '/purchase-orders/new',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPurchaseOrdersOrderIdRoute =
+  AdminPurchaseOrdersOrderIdRouteImport.update({
+    id: '/purchase-orders/$orderId',
+    path: '/purchase-orders/$orderId',
+    getParentRoute: () => AdminRoute,
+  } as any)
 const AdminProductsVendorsRoute = AdminProductsVendorsRouteImport.update({
   id: '/products/vendors',
   path: '/products/vendors',
@@ -268,10 +338,16 @@ const AdminAnalyticsWishlistRoute = AdminAnalyticsWishlistRouteImport.update({
   path: '/analytics/wishlist',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminAnalyticsSellThroughRoute =
+  AdminAnalyticsSellThroughRouteImport.update({
+    id: '/analytics/sell-through',
+    path: '/analytics/sell-through',
+    getParentRoute: () => AdminRoute,
+  } as any)
 const AccountOrdersOrderIdRoute = AccountOrdersOrderIdRouteImport.update({
-  id: '/$orderId',
-  path: '/$orderId',
-  getParentRoute: () => AccountOrdersRoute,
+  id: '/orders/$orderId',
+  path: '/orders/$orderId',
+  getParentRoute: () => AccountRoute,
 } as any)
 const AdminProductsVariantsVariantIdRoute =
   AdminProductsVariantsVariantIdRouteImport.update({
@@ -285,23 +361,30 @@ export interface FileRoutesByFullPath {
   '/account': typeof AccountRouteWithChildren
   '/admin': typeof AdminRouteWithChildren
   '/checkout': typeof CheckoutRoute
-  '/products': typeof ProductsRouteWithChildren
+  '/products': typeof ProductsRoute
   '/search': typeof SearchRoute
   '/shop': typeof ShopRoute
   '/thank-you': typeof ThankYouRoute
-  '/account/orders': typeof AccountOrdersRouteWithChildren
+  '/wishlist': typeof WishlistRoute
+  '/admin/abandoned-checkouts': typeof AdminAbandonedCheckoutsRoute
+  '/admin/email-logs': typeof AdminEmailLogsRoute
+  '/admin/footer': typeof AdminFooterRoute
+  '/admin/homepage': typeof AdminHomepageRoute
+  '/admin/inventory': typeof AdminInventoryRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/shop': typeof AdminShopRoute
   '/api/upload': typeof ApiUploadRoute
+  '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/collection/$slug': typeof CollectionSlugRoute
   '/page/$slug': typeof PageSlugRoute
   '/product/$slug': typeof ProductSlugRoute
-  '/products/$categorySlug': typeof ProductsCategorySlugRoute
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/account/orders/$orderId': typeof AccountOrdersOrderIdRoute
+  '/admin/analytics/sell-through': typeof AdminAnalyticsSellThroughRoute
   '/admin/analytics/wishlist': typeof AdminAnalyticsWishlistRoute
   '/admin/collections/$collectionId': typeof AdminCollectionsCollectionIdRoute
   '/admin/collections/new': typeof AdminCollectionsNewRoute
@@ -316,36 +399,48 @@ export interface FileRoutesByFullPath {
   '/admin/products/definitions': typeof AdminProductsDefinitionsRoute
   '/admin/products/new': typeof AdminProductsNewRoute
   '/admin/products/vendors': typeof AdminProductsVendorsRoute
+  '/admin/purchase-orders/$orderId': typeof AdminPurchaseOrdersOrderIdRoute
+  '/admin/purchase-orders/new': typeof AdminPurchaseOrdersNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/abandoned-checkouts': typeof ApiCronAbandonedCheckoutsRoute
   '/api/cron/regenerate-collections': typeof ApiCronRegenerateCollectionsRoute
+  '/account/orders': typeof AccountOrdersIndexRoute
   '/admin/collections': typeof AdminCollectionsIndexRoute
   '/admin/customers': typeof AdminCustomersIndexRoute
   '/admin/discounts': typeof AdminDiscountsIndexRoute
   '/admin/orders': typeof AdminOrdersIndexRoute
   '/admin/pages': typeof AdminPagesIndexRoute
   '/admin/products': typeof AdminProductsIndexRoute
+  '/admin/purchase-orders': typeof AdminPurchaseOrdersIndexRoute
   '/admin/products/variants/$variantId': typeof AdminProductsVariantsVariantIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/checkout': typeof CheckoutRoute
-  '/products': typeof ProductsRouteWithChildren
+  '/products': typeof ProductsRoute
   '/search': typeof SearchRoute
   '/shop': typeof ShopRoute
   '/thank-you': typeof ThankYouRoute
-  '/account/orders': typeof AccountOrdersRouteWithChildren
+  '/wishlist': typeof WishlistRoute
+  '/admin/abandoned-checkouts': typeof AdminAbandonedCheckoutsRoute
+  '/admin/email-logs': typeof AdminEmailLogsRoute
+  '/admin/footer': typeof AdminFooterRoute
+  '/admin/homepage': typeof AdminHomepageRoute
+  '/admin/inventory': typeof AdminInventoryRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/shop': typeof AdminShopRoute
   '/api/upload': typeof ApiUploadRoute
+  '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/collection/$slug': typeof CollectionSlugRoute
   '/page/$slug': typeof PageSlugRoute
   '/product/$slug': typeof ProductSlugRoute
-  '/products/$categorySlug': typeof ProductsCategorySlugRoute
   '/account': typeof AccountIndexRoute
   '/admin': typeof AdminIndexRoute
   '/account/orders/$orderId': typeof AccountOrdersOrderIdRoute
+  '/admin/analytics/sell-through': typeof AdminAnalyticsSellThroughRoute
   '/admin/analytics/wishlist': typeof AdminAnalyticsWishlistRoute
   '/admin/collections/$collectionId': typeof AdminCollectionsCollectionIdRoute
   '/admin/collections/new': typeof AdminCollectionsNewRoute
@@ -360,14 +455,19 @@ export interface FileRoutesByTo {
   '/admin/products/definitions': typeof AdminProductsDefinitionsRoute
   '/admin/products/new': typeof AdminProductsNewRoute
   '/admin/products/vendors': typeof AdminProductsVendorsRoute
+  '/admin/purchase-orders/$orderId': typeof AdminPurchaseOrdersOrderIdRoute
+  '/admin/purchase-orders/new': typeof AdminPurchaseOrdersNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/abandoned-checkouts': typeof ApiCronAbandonedCheckoutsRoute
   '/api/cron/regenerate-collections': typeof ApiCronRegenerateCollectionsRoute
+  '/account/orders': typeof AccountOrdersIndexRoute
   '/admin/collections': typeof AdminCollectionsIndexRoute
   '/admin/customers': typeof AdminCustomersIndexRoute
   '/admin/discounts': typeof AdminDiscountsIndexRoute
   '/admin/orders': typeof AdminOrdersIndexRoute
   '/admin/pages': typeof AdminPagesIndexRoute
   '/admin/products': typeof AdminProductsIndexRoute
+  '/admin/purchase-orders': typeof AdminPurchaseOrdersIndexRoute
   '/admin/products/variants/$variantId': typeof AdminProductsVariantsVariantIdRoute
 }
 export interface FileRoutesById {
@@ -376,23 +476,30 @@ export interface FileRoutesById {
   '/account': typeof AccountRouteWithChildren
   '/admin': typeof AdminRouteWithChildren
   '/checkout': typeof CheckoutRoute
-  '/products': typeof ProductsRouteWithChildren
+  '/products': typeof ProductsRoute
   '/search': typeof SearchRoute
   '/shop': typeof ShopRoute
   '/thank-you': typeof ThankYouRoute
-  '/account/orders': typeof AccountOrdersRouteWithChildren
+  '/wishlist': typeof WishlistRoute
+  '/admin/abandoned-checkouts': typeof AdminAbandonedCheckoutsRoute
+  '/admin/email-logs': typeof AdminEmailLogsRoute
+  '/admin/footer': typeof AdminFooterRoute
+  '/admin/homepage': typeof AdminHomepageRoute
+  '/admin/inventory': typeof AdminInventoryRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/shop': typeof AdminShopRoute
   '/api/upload': typeof ApiUploadRoute
+  '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/collection/$slug': typeof CollectionSlugRoute
   '/page/$slug': typeof PageSlugRoute
   '/product/$slug': typeof ProductSlugRoute
-  '/products/$categorySlug': typeof ProductsCategorySlugRoute
   '/account/': typeof AccountIndexRoute
   '/admin/': typeof AdminIndexRoute
   '/account/orders/$orderId': typeof AccountOrdersOrderIdRoute
+  '/admin/analytics/sell-through': typeof AdminAnalyticsSellThroughRoute
   '/admin/analytics/wishlist': typeof AdminAnalyticsWishlistRoute
   '/admin/collections/$collectionId': typeof AdminCollectionsCollectionIdRoute
   '/admin/collections/new': typeof AdminCollectionsNewRoute
@@ -407,14 +514,19 @@ export interface FileRoutesById {
   '/admin/products/definitions': typeof AdminProductsDefinitionsRoute
   '/admin/products/new': typeof AdminProductsNewRoute
   '/admin/products/vendors': typeof AdminProductsVendorsRoute
+  '/admin/purchase-orders/$orderId': typeof AdminPurchaseOrdersOrderIdRoute
+  '/admin/purchase-orders/new': typeof AdminPurchaseOrdersNewRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/cron/abandoned-checkouts': typeof ApiCronAbandonedCheckoutsRoute
   '/api/cron/regenerate-collections': typeof ApiCronRegenerateCollectionsRoute
+  '/account/orders/': typeof AccountOrdersIndexRoute
   '/admin/collections/': typeof AdminCollectionsIndexRoute
   '/admin/customers/': typeof AdminCustomersIndexRoute
   '/admin/discounts/': typeof AdminDiscountsIndexRoute
   '/admin/orders/': typeof AdminOrdersIndexRoute
   '/admin/pages/': typeof AdminPagesIndexRoute
   '/admin/products/': typeof AdminProductsIndexRoute
+  '/admin/purchase-orders/': typeof AdminPurchaseOrdersIndexRoute
   '/admin/products/variants/$variantId': typeof AdminProductsVariantsVariantIdRoute
 }
 export interface FileRouteTypes {
@@ -428,19 +540,26 @@ export interface FileRouteTypes {
     | '/search'
     | '/shop'
     | '/thank-you'
-    | '/account/orders'
+    | '/wishlist'
+    | '/admin/abandoned-checkouts'
+    | '/admin/email-logs'
+    | '/admin/footer'
+    | '/admin/homepage'
+    | '/admin/inventory'
     | '/admin/settings'
     | '/admin/shop'
     | '/api/upload'
+    | '/auth/forgot-password'
     | '/auth/login'
     | '/auth/register'
+    | '/auth/reset-password'
     | '/collection/$slug'
     | '/page/$slug'
     | '/product/$slug'
-    | '/products/$categorySlug'
     | '/account/'
     | '/admin/'
     | '/account/orders/$orderId'
+    | '/admin/analytics/sell-through'
     | '/admin/analytics/wishlist'
     | '/admin/collections/$collectionId'
     | '/admin/collections/new'
@@ -455,14 +574,19 @@ export interface FileRouteTypes {
     | '/admin/products/definitions'
     | '/admin/products/new'
     | '/admin/products/vendors'
+    | '/admin/purchase-orders/$orderId'
+    | '/admin/purchase-orders/new'
     | '/api/auth/$'
+    | '/api/cron/abandoned-checkouts'
     | '/api/cron/regenerate-collections'
+    | '/account/orders'
     | '/admin/collections'
     | '/admin/customers'
     | '/admin/discounts'
     | '/admin/orders'
     | '/admin/pages'
     | '/admin/products'
+    | '/admin/purchase-orders'
     | '/admin/products/variants/$variantId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -472,19 +596,26 @@ export interface FileRouteTypes {
     | '/search'
     | '/shop'
     | '/thank-you'
-    | '/account/orders'
+    | '/wishlist'
+    | '/admin/abandoned-checkouts'
+    | '/admin/email-logs'
+    | '/admin/footer'
+    | '/admin/homepage'
+    | '/admin/inventory'
     | '/admin/settings'
     | '/admin/shop'
     | '/api/upload'
+    | '/auth/forgot-password'
     | '/auth/login'
     | '/auth/register'
+    | '/auth/reset-password'
     | '/collection/$slug'
     | '/page/$slug'
     | '/product/$slug'
-    | '/products/$categorySlug'
     | '/account'
     | '/admin'
     | '/account/orders/$orderId'
+    | '/admin/analytics/sell-through'
     | '/admin/analytics/wishlist'
     | '/admin/collections/$collectionId'
     | '/admin/collections/new'
@@ -499,14 +630,19 @@ export interface FileRouteTypes {
     | '/admin/products/definitions'
     | '/admin/products/new'
     | '/admin/products/vendors'
+    | '/admin/purchase-orders/$orderId'
+    | '/admin/purchase-orders/new'
     | '/api/auth/$'
+    | '/api/cron/abandoned-checkouts'
     | '/api/cron/regenerate-collections'
+    | '/account/orders'
     | '/admin/collections'
     | '/admin/customers'
     | '/admin/discounts'
     | '/admin/orders'
     | '/admin/pages'
     | '/admin/products'
+    | '/admin/purchase-orders'
     | '/admin/products/variants/$variantId'
   id:
     | '__root__'
@@ -518,19 +654,26 @@ export interface FileRouteTypes {
     | '/search'
     | '/shop'
     | '/thank-you'
-    | '/account/orders'
+    | '/wishlist'
+    | '/admin/abandoned-checkouts'
+    | '/admin/email-logs'
+    | '/admin/footer'
+    | '/admin/homepage'
+    | '/admin/inventory'
     | '/admin/settings'
     | '/admin/shop'
     | '/api/upload'
+    | '/auth/forgot-password'
     | '/auth/login'
     | '/auth/register'
+    | '/auth/reset-password'
     | '/collection/$slug'
     | '/page/$slug'
     | '/product/$slug'
-    | '/products/$categorySlug'
     | '/account/'
     | '/admin/'
     | '/account/orders/$orderId'
+    | '/admin/analytics/sell-through'
     | '/admin/analytics/wishlist'
     | '/admin/collections/$collectionId'
     | '/admin/collections/new'
@@ -545,14 +688,19 @@ export interface FileRouteTypes {
     | '/admin/products/definitions'
     | '/admin/products/new'
     | '/admin/products/vendors'
+    | '/admin/purchase-orders/$orderId'
+    | '/admin/purchase-orders/new'
     | '/api/auth/$'
+    | '/api/cron/abandoned-checkouts'
     | '/api/cron/regenerate-collections'
+    | '/account/orders/'
     | '/admin/collections/'
     | '/admin/customers/'
     | '/admin/discounts/'
     | '/admin/orders/'
     | '/admin/pages/'
     | '/admin/products/'
+    | '/admin/purchase-orders/'
     | '/admin/products/variants/$variantId'
   fileRoutesById: FileRoutesById
 }
@@ -561,22 +709,33 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRouteWithChildren
   AdminRoute: typeof AdminRouteWithChildren
   CheckoutRoute: typeof CheckoutRoute
-  ProductsRoute: typeof ProductsRouteWithChildren
+  ProductsRoute: typeof ProductsRoute
   SearchRoute: typeof SearchRoute
   ShopRoute: typeof ShopRoute
   ThankYouRoute: typeof ThankYouRoute
+  WishlistRoute: typeof WishlistRoute
   ApiUploadRoute: typeof ApiUploadRoute
+  AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
+  AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   CollectionSlugRoute: typeof CollectionSlugRoute
   PageSlugRoute: typeof PageSlugRoute
   ProductSlugRoute: typeof ProductSlugRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiCronAbandonedCheckoutsRoute: typeof ApiCronAbandonedCheckoutsRoute
   ApiCronRegenerateCollectionsRoute: typeof ApiCronRegenerateCollectionsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/wishlist': {
+      id: '/wishlist'
+      path: '/wishlist'
+      fullPath: '/wishlist'
+      preLoaderRoute: typeof WishlistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/thank-you': {
       id: '/thank-you'
       path: '/thank-you'
@@ -647,13 +806,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountIndexRouteImport
       parentRoute: typeof AccountRoute
     }
-    '/products/$categorySlug': {
-      id: '/products/$categorySlug'
-      path: '/$categorySlug'
-      fullPath: '/products/$categorySlug'
-      preLoaderRoute: typeof ProductsCategorySlugRouteImport
-      parentRoute: typeof ProductsRoute
-    }
     '/product/$slug': {
       id: '/product/$slug'
       path: '/product/$slug'
@@ -675,6 +827,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CollectionSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/reset-password': {
+      id: '/auth/reset-password'
+      path: '/auth/reset-password'
+      fullPath: '/auth/reset-password'
+      preLoaderRoute: typeof AuthResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/register': {
       id: '/auth/register'
       path: '/auth/register'
@@ -687,6 +846,13 @@ declare module '@tanstack/react-router' {
       path: '/auth/login'
       fullPath: '/auth/login'
       preLoaderRoute: typeof AuthLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/forgot-password': {
+      id: '/auth/forgot-password'
+      path: '/auth/forgot-password'
+      fullPath: '/auth/forgot-password'
+      preLoaderRoute: typeof AuthForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/upload': {
@@ -710,12 +876,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSettingsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/account/orders': {
-      id: '/account/orders'
-      path: '/orders'
-      fullPath: '/account/orders'
-      preLoaderRoute: typeof AccountOrdersRouteImport
-      parentRoute: typeof AccountRoute
+    '/admin/inventory': {
+      id: '/admin/inventory'
+      path: '/inventory'
+      fullPath: '/admin/inventory'
+      preLoaderRoute: typeof AdminInventoryRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/homepage': {
+      id: '/admin/homepage'
+      path: '/homepage'
+      fullPath: '/admin/homepage'
+      preLoaderRoute: typeof AdminHomepageRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/footer': {
+      id: '/admin/footer'
+      path: '/footer'
+      fullPath: '/admin/footer'
+      preLoaderRoute: typeof AdminFooterRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/email-logs': {
+      id: '/admin/email-logs'
+      path: '/email-logs'
+      fullPath: '/admin/email-logs'
+      preLoaderRoute: typeof AdminEmailLogsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/abandoned-checkouts': {
+      id: '/admin/abandoned-checkouts'
+      path: '/abandoned-checkouts'
+      fullPath: '/admin/abandoned-checkouts'
+      preLoaderRoute: typeof AdminAbandonedCheckoutsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/purchase-orders/': {
+      id: '/admin/purchase-orders/'
+      path: '/purchase-orders'
+      fullPath: '/admin/purchase-orders'
+      preLoaderRoute: typeof AdminPurchaseOrdersIndexRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/products/': {
       id: '/admin/products/'
@@ -759,11 +960,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCollectionsIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/account/orders/': {
+      id: '/account/orders/'
+      path: '/orders'
+      fullPath: '/account/orders'
+      preLoaderRoute: typeof AccountOrdersIndexRouteImport
+      parentRoute: typeof AccountRoute
+    }
     '/api/cron/regenerate-collections': {
       id: '/api/cron/regenerate-collections'
       path: '/api/cron/regenerate-collections'
       fullPath: '/api/cron/regenerate-collections'
       preLoaderRoute: typeof ApiCronRegenerateCollectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/abandoned-checkouts': {
+      id: '/api/cron/abandoned-checkouts'
+      path: '/api/cron/abandoned-checkouts'
+      fullPath: '/api/cron/abandoned-checkouts'
+      preLoaderRoute: typeof ApiCronAbandonedCheckoutsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -772,6 +987,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/purchase-orders/new': {
+      id: '/admin/purchase-orders/new'
+      path: '/purchase-orders/new'
+      fullPath: '/admin/purchase-orders/new'
+      preLoaderRoute: typeof AdminPurchaseOrdersNewRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/purchase-orders/$orderId': {
+      id: '/admin/purchase-orders/$orderId'
+      path: '/purchase-orders/$orderId'
+      fullPath: '/admin/purchase-orders/$orderId'
+      preLoaderRoute: typeof AdminPurchaseOrdersOrderIdRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/products/vendors': {
       id: '/admin/products/vendors'
@@ -871,12 +1100,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAnalyticsWishlistRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/analytics/sell-through': {
+      id: '/admin/analytics/sell-through'
+      path: '/analytics/sell-through'
+      fullPath: '/admin/analytics/sell-through'
+      preLoaderRoute: typeof AdminAnalyticsSellThroughRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/account/orders/$orderId': {
       id: '/account/orders/$orderId'
-      path: '/$orderId'
+      path: '/orders/$orderId'
       fullPath: '/account/orders/$orderId'
       preLoaderRoute: typeof AccountOrdersOrderIdRouteImport
-      parentRoute: typeof AccountOrdersRoute
+      parentRoute: typeof AccountRoute
     }
     '/admin/products/variants/$variantId': {
       id: '/admin/products/variants/$variantId'
@@ -888,35 +1124,31 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AccountOrdersRouteChildren {
-  AccountOrdersOrderIdRoute: typeof AccountOrdersOrderIdRoute
-}
-
-const AccountOrdersRouteChildren: AccountOrdersRouteChildren = {
-  AccountOrdersOrderIdRoute: AccountOrdersOrderIdRoute,
-}
-
-const AccountOrdersRouteWithChildren = AccountOrdersRoute._addFileChildren(
-  AccountOrdersRouteChildren,
-)
-
 interface AccountRouteChildren {
-  AccountOrdersRoute: typeof AccountOrdersRouteWithChildren
   AccountIndexRoute: typeof AccountIndexRoute
+  AccountOrdersOrderIdRoute: typeof AccountOrdersOrderIdRoute
+  AccountOrdersIndexRoute: typeof AccountOrdersIndexRoute
 }
 
 const AccountRouteChildren: AccountRouteChildren = {
-  AccountOrdersRoute: AccountOrdersRouteWithChildren,
   AccountIndexRoute: AccountIndexRoute,
+  AccountOrdersOrderIdRoute: AccountOrdersOrderIdRoute,
+  AccountOrdersIndexRoute: AccountOrdersIndexRoute,
 }
 
 const AccountRouteWithChildren =
   AccountRoute._addFileChildren(AccountRouteChildren)
 
 interface AdminRouteChildren {
+  AdminAbandonedCheckoutsRoute: typeof AdminAbandonedCheckoutsRoute
+  AdminEmailLogsRoute: typeof AdminEmailLogsRoute
+  AdminFooterRoute: typeof AdminFooterRoute
+  AdminHomepageRoute: typeof AdminHomepageRoute
+  AdminInventoryRoute: typeof AdminInventoryRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminShopRoute: typeof AdminShopRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminAnalyticsSellThroughRoute: typeof AdminAnalyticsSellThroughRoute
   AdminAnalyticsWishlistRoute: typeof AdminAnalyticsWishlistRoute
   AdminCollectionsCollectionIdRoute: typeof AdminCollectionsCollectionIdRoute
   AdminCollectionsNewRoute: typeof AdminCollectionsNewRoute
@@ -931,19 +1163,28 @@ interface AdminRouteChildren {
   AdminProductsDefinitionsRoute: typeof AdminProductsDefinitionsRoute
   AdminProductsNewRoute: typeof AdminProductsNewRoute
   AdminProductsVendorsRoute: typeof AdminProductsVendorsRoute
+  AdminPurchaseOrdersOrderIdRoute: typeof AdminPurchaseOrdersOrderIdRoute
+  AdminPurchaseOrdersNewRoute: typeof AdminPurchaseOrdersNewRoute
   AdminCollectionsIndexRoute: typeof AdminCollectionsIndexRoute
   AdminCustomersIndexRoute: typeof AdminCustomersIndexRoute
   AdminDiscountsIndexRoute: typeof AdminDiscountsIndexRoute
   AdminOrdersIndexRoute: typeof AdminOrdersIndexRoute
   AdminPagesIndexRoute: typeof AdminPagesIndexRoute
   AdminProductsIndexRoute: typeof AdminProductsIndexRoute
+  AdminPurchaseOrdersIndexRoute: typeof AdminPurchaseOrdersIndexRoute
   AdminProductsVariantsVariantIdRoute: typeof AdminProductsVariantsVariantIdRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAbandonedCheckoutsRoute: AdminAbandonedCheckoutsRoute,
+  AdminEmailLogsRoute: AdminEmailLogsRoute,
+  AdminFooterRoute: AdminFooterRoute,
+  AdminHomepageRoute: AdminHomepageRoute,
+  AdminInventoryRoute: AdminInventoryRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminShopRoute: AdminShopRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminAnalyticsSellThroughRoute: AdminAnalyticsSellThroughRoute,
   AdminAnalyticsWishlistRoute: AdminAnalyticsWishlistRoute,
   AdminCollectionsCollectionIdRoute: AdminCollectionsCollectionIdRoute,
   AdminCollectionsNewRoute: AdminCollectionsNewRoute,
@@ -958,45 +1199,40 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminProductsDefinitionsRoute: AdminProductsDefinitionsRoute,
   AdminProductsNewRoute: AdminProductsNewRoute,
   AdminProductsVendorsRoute: AdminProductsVendorsRoute,
+  AdminPurchaseOrdersOrderIdRoute: AdminPurchaseOrdersOrderIdRoute,
+  AdminPurchaseOrdersNewRoute: AdminPurchaseOrdersNewRoute,
   AdminCollectionsIndexRoute: AdminCollectionsIndexRoute,
   AdminCustomersIndexRoute: AdminCustomersIndexRoute,
   AdminDiscountsIndexRoute: AdminDiscountsIndexRoute,
   AdminOrdersIndexRoute: AdminOrdersIndexRoute,
   AdminPagesIndexRoute: AdminPagesIndexRoute,
   AdminProductsIndexRoute: AdminProductsIndexRoute,
+  AdminPurchaseOrdersIndexRoute: AdminPurchaseOrdersIndexRoute,
   AdminProductsVariantsVariantIdRoute: AdminProductsVariantsVariantIdRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
-
-interface ProductsRouteChildren {
-  ProductsCategorySlugRoute: typeof ProductsCategorySlugRoute
-}
-
-const ProductsRouteChildren: ProductsRouteChildren = {
-  ProductsCategorySlugRoute: ProductsCategorySlugRoute,
-}
-
-const ProductsRouteWithChildren = ProductsRoute._addFileChildren(
-  ProductsRouteChildren,
-)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRouteWithChildren,
   AdminRoute: AdminRouteWithChildren,
   CheckoutRoute: CheckoutRoute,
-  ProductsRoute: ProductsRouteWithChildren,
+  ProductsRoute: ProductsRoute,
   SearchRoute: SearchRoute,
   ShopRoute: ShopRoute,
   ThankYouRoute: ThankYouRoute,
+  WishlistRoute: WishlistRoute,
   ApiUploadRoute: ApiUploadRoute,
+  AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthRegisterRoute: AuthRegisterRoute,
+  AuthResetPasswordRoute: AuthResetPasswordRoute,
   CollectionSlugRoute: CollectionSlugRoute,
   PageSlugRoute: PageSlugRoute,
   ProductSlugRoute: ProductSlugRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiCronAbandonedCheckoutsRoute: ApiCronAbandonedCheckoutsRoute,
   ApiCronRegenerateCollectionsRoute: ApiCronRegenerateCollectionsRoute,
 }
 export const routeTree = rootRouteImport

@@ -7,42 +7,7 @@ datasource db {
   url      = env("MYSQL_URL")
 }
 
-// Auth tables
-model User {
-  id                String    @id @db.VarChar(36)
-  name              String    @db.VarChar(255)
-  email             String    @unique @db.VarChar(255)
-  emailVerified     Boolean   @default(false) @map("email_verified")
-  image             String?   @db.Text
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
-  role              String    @default("customer") @db.Text
-  phoneNumber       String?   @map("phone_number") @db.Text
-
-  sessions          Session[]
-  accounts          Account[]
-  inventoryTracking InventoryTracking[]
-
-  @@map("user")
-}
-
-model Session {
-  id        String   @id @db.VarChar(36)
-  expiresAt DateTime @map("expires_at") @db.Timestamp(3)
-  token     String   @unique @db.VarChar(255)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-  ipAddress String?  @map("ip_address") @db.Text
-  userAgent String?  @map("user_agent") @db.Text
-  userId    String   @map("user_id") @db.VarChar(36)
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId], map: "session_userId_idx")
-  @@map("session")
-}
-
-model Account {
+model account {
   id                    String    @id @db.VarChar(36)
   accountId             String    @map("account_id") @db.Text
   providerId            String    @map("provider_id") @db.Text
@@ -55,492 +20,175 @@ model Account {
   scope                 String?   @db.Text
   password              String?   @db.Text
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  user                  user      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId], map: "account_userId_idx")
-  @@map("account")
 }
 
-model Verification {
-  id         String   @id @db.VarChar(36)
-  identifier String   @db.VarChar(255)
-  value      String   @db.Text
-  expiresAt  DateTime @map("expires_at") @db.Timestamp(3)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+model addresses {
+  id         String     @id @db.VarChar(36)
+  customerId String?    @map("customer_id") @db.VarChar(36)
+  orderId    String?    @map("order_id") @db.VarChar(36)
+  type       String     @db.VarChar(20)
+  firstName  String?    @map("first_name") @db.VarChar(255)
+  lastName   String?    @map("last_name") @db.VarChar(255)
+  company    String?    @db.VarChar(255)
+  address1   String     @db.VarChar(255)
+  address2   String?    @db.VarChar(255)
+  city       String     @db.VarChar(100)
+  state      String?    @db.VarChar(100)
+  zip        String?    @db.VarChar(20)
+  country    String     @db.VarChar(100)
+  phone      String?    @db.VarChar(50)
+  isDefault  Boolean    @default(false) @map("is_default")
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  customer   customers? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order      orders?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  @@index([identifier], map: "verification_identifier_idx")
-  @@map("verification")
+  @@index([customerId], map: "addresses_customerId_idx")
+  @@index([orderId], map: "addresses_orderId_idx")
 }
 
-// E-commerce tables
+model cart {
+  id         String       @id @db.VarChar(36)
+  customerId String?      @map("customer_id") @db.VarChar(36)
+  sessionId  String?      @map("session_id") @db.VarChar(255)
+  discountId String?      @map("discount_id") @db.VarChar(36)
+  expiresAt  DateTime?    @map("expires_at") @db.Timestamp(3)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  customer   customers?   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  discount   discounts?   @relation(fields: [discountId], references: [id])
+  items      cart_items[]
 
-model Vendor {
-  id        String   @id @db.VarChar(36)
-  name      String   @db.VarChar(255)
-  email     String?  @db.VarChar(255)
-  phone     String?  @db.VarChar(50)
-  website   String?  @db.VarChar(255)
-  address   String?  @db.Text
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  products Product[]
-
-  @@index([name], map: "vendors_name_idx")
-  @@map("vendors")
+  @@index([customerId], map: "cart_customerId_idx")
+  @@index([discountId], map: "cart_discount_id_fkey")
+  @@index([sessionId], map: "cart_sessionId_idx")
 }
 
-model ProductCategory {
-  id          String   @id @db.VarChar(36)
-  name        String   @db.VarChar(255)
-  slug        String   @unique @db.VarChar(255)
-  description String?  @db.Text
-  image       String?  @db.Text
-  parentId    String?  @map("parent_id") @db.VarChar(36)
-  position    Int      @default(0)
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+model cart_items {
+  id        String            @id @db.VarChar(36)
+  cartId    String            @map("cart_id") @db.VarChar(36)
+  productId String?           @map("product_id") @db.VarChar(36)
+  variantId String?           @map("variant_id") @db.VarChar(36)
+  quantity  Int
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  cart      cart              @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   products?         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant   product_variants? @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
-  parent   ProductCategory?  @relation("CategoryParent", fields: [parentId], references: [id])
-  children ProductCategory[] @relation("CategoryParent")
-  products Product[]
-
-  @@index([parentId], map: "product_categories_parentId_idx")
-  @@index([slug], map: "product_categories_slug_idx")
-  @@map("product_categories")
+  @@index([cartId], map: "cart_items_cartId_idx")
+  @@index([productId], map: "cart_items_productId_idx")
+  @@index([variantId], map: "cart_items_variantId_idx")
 }
 
-model Definition {
+model collection_products {
+  id           String      @id @db.VarChar(36)
+  collectionId String      @map("collection_id") @db.VarChar(36)
+  productId    String      @map("product_id") @db.VarChar(36)
+  position     Int         @default(0)
+  isManual     Boolean     @default(false) @map("is_manual")
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt    DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  collection   collections @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  product      products    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([collectionId], map: "collection_products_collectionId_idx")
+  @@index([position])
+  @@index([productId], map: "collection_products_productId_idx")
+}
+
+model collection_rules {
+  id           String      @id @db.VarChar(36)
+  collectionId String      @map("collection_id") @db.VarChar(36)
+  ruleType     String      @map("rule_type") @db.VarChar(50)
+  operator     String      @db.VarChar(50)
+  value        String      @db.Text
+  position     Int         @default(0)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt    DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  collection   collections @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@index([collectionId], map: "collection_rules_collectionId_idx")
+  @@index([ruleType], map: "collection_rules_ruleType_idx")
+}
+
+model collections {
+  id                String                @id @db.VarChar(36)
+  name              String                @db.VarChar(255)
+  slug              String                @unique(map: "collections_slug_unique") @db.VarChar(255)
+  description       String?               @db.Text
+  image             String?               @db.Text
+  ruleMatch         String                @default("all") @map("rule_match") @db.VarChar(10)
+  sortOrder         String                @default("manual") @map("sort_order") @db.VarChar(50)
+  active            Boolean               @default(true)
+  seoTitle          String?               @map("seo_title") @db.VarChar(255)
+  seoDescription    String?               @map("seo_description") @db.Text
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt         DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  lastRegeneratedAt DateTime?             @map("last_regenerated_at") @db.Timestamp(3)
+  needsRegeneration Boolean               @default(false) @map("needs_regeneration")
+  products          collection_products[]
+  rules             collection_rules[]
+
+  @@index([active])
+  @@index([needsRegeneration])
+  @@index([slug])
+}
+
+model customer_metafields {
+  id         String    @id @db.VarChar(36)
+  customerId String    @map("customer_id") @db.VarChar(36)
+  namespace  String    @db.VarChar(100)
+  key        String    @db.VarChar(100)
+  value      String?   @db.Text
+  type       String    @db.VarChar(50)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  customer   customers @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId], map: "customer_metafields_customerId_idx")
+  @@index([namespace, key])
+}
+
+model customers {
+  id               String                @id @db.VarChar(36)
+  email            String                @unique(map: "customers_email_unique") @db.VarChar(255)
+  firstName        String?               @map("first_name") @db.VarChar(255)
+  lastName         String?               @map("last_name") @db.VarChar(255)
+  phone            String?               @db.VarChar(50)
+  acceptsMarketing Boolean               @default(false) @map("accepts_marketing")
+  totalSpent       Decimal               @default(0.00) @map("total_spent") @db.Decimal(10, 2)
+  ordersCount      Int                   @default(0) @map("orders_count")
+  status           String                @default("active") @db.VarChar(50)
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  hasEmail         Boolean               @default(false) @map("has_email")
+  addresses        addresses[]
+  carts            cart[]
+  metafields       customer_metafields[]
+  orders           orders[]
+
+  @@index([email])
+  @@index([status])
+}
+
+model definitions {
   id        String   @id @db.VarChar(36)
   name      String   @db.VarChar(255)
   type      String   @db.VarChar(50)
   values    Json
   position  Int      @default(0)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  @@map("definitions")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
 }
 
-model Product {
-  id               String   @id @db.VarChar(36)
-  name             String   @db.VarChar(255)
-  slug             String   @unique @db.VarChar(255)
-  description      String?  @db.Text
-  sku              String?  @db.VarChar(100)
-  price            Decimal  @db.Decimal(10, 2)
-  compareAtPrice   Decimal? @map("compare_at_price") @db.Decimal(10, 2)
-  cost             Decimal? @db.Decimal(10, 2)
-  trackQuantity    Boolean  @default(true) @map("track_quantity")
-  status           String   @default("draft") @db.VarChar(50)
-  featured         Boolean  @default(false)
-  vendorId         String?  @map("vendor_id") @db.VarChar(36)
-  categoryId       String?  @map("category_id") @db.VarChar(36)
-  material         String?  @db.Text
-  weight           Decimal  @default(1) @db.Decimal(10, 2)
-  weightUnit       String?  @default("kg") @map("weight_unit") @db.VarChar(10)
-  requiresShipping Boolean  @default(true) @map("requires_shipping")
-  taxIncluded      Boolean  @default(false) @map("tax_included")
-  internalNote     String?  @map("internal_note") @db.Text
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  category          ProductCategory?       @relation(fields: [categoryId], references: [id])
-  vendor            Vendor?                @relation(fields: [vendorId], references: [id])
-  variants          ProductVariant[]
-  options           ProductOption[]
-  metafields        ProductMetafield[]
-  media             ProductMedia[]
-  orderItems        OrderItem[]
-  cartItems         CartItem[]
-  tags              ProductTagsToProduct[]
-  inventoryTracking InventoryTracking[]
-  collectionProducts CollectionProduct[]
-  wishlistItems     WishlistItem[]
-
-  @@index([slug], map: "products_slug_idx")
-  @@index([status], map: "products_status_idx")
-  @@index([categoryId], map: "products_categoryId_idx")
-  @@index([vendorId], map: "products_vendorId_idx")
-  @@map("products")
-}
-
-model ProductOption {
-  id        String   @id @db.VarChar(36)
-  productId String   @map("product_id") @db.VarChar(36)
-  name      String   @db.VarChar(255)
-  position  Int      @default(0)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  product        Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
-  values         ProductOptionValue[]
-  variantOptions ProductVariantOption[]
-
-  @@index([productId], map: "product_options_productId_idx")
-  @@map("product_options")
-}
-
-model ProductOptionValue {
-  id        String   @id @db.VarChar(36)
-  optionId  String   @map("option_id") @db.VarChar(36)
-  name      String   @db.VarChar(255)
-  position  Int      @default(0)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  option         ProductOption          @relation(fields: [optionId], references: [id], onDelete: Cascade)
-  variantOptions ProductVariantOption[]
-
-  @@index([optionId], map: "product_option_values_optionId_idx")
-  @@map("product_option_values")
-}
-
-model ProductVariant {
-  id             String   @id @db.VarChar(36)
-  productId      String   @map("product_id") @db.VarChar(36)
-  sku            String?  @db.VarChar(100)
-  barcode        String?  @db.VarChar(100)
-  price          Decimal? @db.Decimal(10, 2)
-  compareAtPrice Decimal? @map("compare_at_price") @db.Decimal(10, 2)
-  cost           Decimal? @db.Decimal(10, 2)
-  weight         Decimal? @db.Decimal(10, 2)
-  position       Int      @default(0)
-  isDefault      Boolean  @default(false) @map("is_default")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  product           Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
-  variantOptions    ProductVariantOption[]
-  media             ProductVariantMedia[]
-  inventory         Inventory?
-  inventoryTracking InventoryTracking[]
-  orderItems        OrderItem[]
-  cartItems         CartItem[]
-
-  @@index([productId], map: "product_variants_productId_idx")
-  @@index([sku], map: "product_variants_sku_idx")
-  @@map("product_variants")
-}
-
-model ProductVariantOption {
-  id            String   @id @db.VarChar(36)
-  variantId     String   @map("variant_id") @db.VarChar(36)
-  optionId      String   @map("option_id") @db.VarChar(36)
-  optionValueId String   @map("option_value_id") @db.VarChar(36)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  variant     ProductVariant     @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  option      ProductOption      @relation(fields: [optionId], references: [id], onDelete: Cascade)
-  optionValue ProductOptionValue @relation(fields: [optionValueId], references: [id], onDelete: Cascade)
-
-  @@index([variantId], map: "product_variant_options_variantId_idx")
-  @@index([optionId], map: "product_variant_options_optionId_idx")
-  @@index([optionValueId], map: "product_variant_options_optionValueId_idx")
-  @@map("product_variant_options")
-}
-
-model Inventory {
-  id        String   @id @db.VarChar(36)
-  variantId String   @unique @map("variant_id") @db.VarChar(36)
-  available Int      @default(0)
-  reserved  Int      @default(0)
-  onHand    Int      @default(0) @map("on_hand")
-  committed Int      @default(0)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-
-  @@index([variantId], map: "inventory_variantId_idx")
-  @@map("inventory")
-}
-
-model InventoryTracking {
-  id                String   @id @db.VarChar(36)
-  variantId         String   @map("variant_id") @db.VarChar(36)
-  productId         String   @map("product_id") @db.VarChar(36)
-  type              String   @db.VarChar(50)
-  quantity          Int
-  previousAvailable Int      @map("previous_available")
-  previousReserved  Int      @map("previous_reserved")
-  newAvailable      Int      @map("new_available")
-  newReserved       Int      @map("new_reserved")
-  reason            String?  @db.Text
-  referenceType     String?  @map("reference_type") @db.VarChar(50)
-  referenceId       String?  @map("reference_id") @db.VarChar(36)
-  userId            String?  @map("user_id") @db.VarChar(36)
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-
-  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
-  user    User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@index([variantId], map: "inventory_tracking_variantId_idx")
-  @@index([productId], map: "inventory_tracking_productId_idx")
-  @@index([type], map: "inventory_tracking_type_idx")
-  @@index([referenceType, referenceId], map: "inventory_tracking_referenceType_referenceId_idx")
-  @@index([userId], map: "inventory_tracking_userId_idx")
-  @@index([createdAt], map: "inventory_tracking_createdAt_idx")
-  @@map("inventory_tracking")
-}
-
-model Media {
-  id               String   @id @db.VarChar(36)
-  filename         String   @db.VarChar(255)
-  originalFilename String   @map("original_filename") @db.VarChar(255)
-  mimeType         String   @map("mime_type") @db.VarChar(100)
-  size             Int
-  url              String   @db.Text
-  alt              String?  @db.Text
-  type             String   @db.VarChar(50)
-  storage          String   @default("local") @db.VarChar(50)
-  metadata         Json?
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  productMedia        ProductMedia[]
-  productVariantMedia ProductVariantMedia[]
-
-  @@index([type], map: "media_type_idx")
-  @@index([mimeType], map: "media_mimeType_idx")
-  @@map("media")
-}
-
-model ProductTag {
-  id        String   @id @db.VarChar(36)
-  name      String   @db.VarChar(255)
-  slug      String   @unique @db.VarChar(255)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  products ProductTagsToProduct[]
-
-  @@index([slug], map: "product_tags_slug_idx")
-  @@map("product_tags")
-}
-
-model ProductTagsToProduct {
-  productId String @map("product_id") @db.VarChar(36)
-  tagId     String @map("tag_id") @db.VarChar(36)
-
-  product Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
-  tag     ProductTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-  @@id([productId, tagId])
-  @@index([productId], map: "product_tags_to_products_productId_idx")
-  @@index([tagId], map: "product_tags_to_products_tagId_idx")
-  @@map("product_tags_to_products")
-}
-
-model ProductMedia {
-  id        String   @id @db.VarChar(36)
-  productId String   @map("product_id") @db.VarChar(36)
-  mediaId   String   @map("media_id") @db.VarChar(36)
-  position  Int      @default(0)
-  isPrimary Boolean  @default(false) @map("is_primary")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  media   Media   @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-
-  @@index([productId], map: "product_media_productId_idx")
-  @@index([mediaId], map: "product_media_mediaId_idx")
-  @@index([position], map: "product_media_position_idx")
-  @@map("product_media")
-}
-
-model ProductVariantMedia {
-  id        String   @id @db.VarChar(36)
-  variantId String   @map("variant_id") @db.VarChar(36)
-  mediaId   String   @map("media_id") @db.VarChar(36)
-  position  Int      @default(0)
-  isPrimary Boolean  @default(false) @map("is_primary")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  media   Media          @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-
-  @@index([variantId], map: "product_variant_media_variantId_idx")
-  @@index([mediaId], map: "product_variant_media_mediaId_idx")
-  @@index([position], map: "product_variant_media_position_idx")
-  @@map("product_variant_media")
-}
-
-model ProductMetafield {
-  id        String   @id @db.VarChar(36)
-  productId String   @map("product_id") @db.VarChar(36)
-  namespace String   @db.VarChar(100)
-  key       String   @db.VarChar(100)
-  value     String?  @db.Text
-  type      String   @db.VarChar(50)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@index([productId], map: "product_metafields_productId_idx")
-  @@index([namespace, key], map: "product_metafields_namespace_key_idx")
-  @@map("product_metafields")
-}
-
-model Customer {
-  id               String   @id @db.VarChar(36)
-  email            String   @unique @db.VarChar(255)
-  firstName        String?  @map("first_name") @db.VarChar(255)
-  lastName         String?  @map("last_name") @db.VarChar(255)
-  phone            String?  @db.VarChar(50)
-  acceptsMarketing Boolean  @default(false) @map("accepts_marketing")
-  hasEmail         Boolean  @default(false) @map("has_email")
-  totalSpent       Decimal  @default(0) @map("total_spent") @db.Decimal(10, 2)
-  ordersCount      Int      @default(0) @map("orders_count")
-  status           String   @default("active") @db.VarChar(50)
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  orders     Order[]
-  addresses  Address[]
-  metafields CustomerMetafield[]
-  carts      Cart[]
-  wishlists  Wishlist[]
-
-  @@index([email], map: "customers_email_idx")
-  @@index([status], map: "customers_status_idx")
-  @@map("customers")
-}
-
-model CustomerMetafield {
-  id         String   @id @db.VarChar(36)
-  customerId String   @map("customer_id") @db.VarChar(36)
-  namespace  String   @db.VarChar(100)
-  key        String   @db.VarChar(100)
-  value      String?  @db.Text
-  type       String   @db.VarChar(50)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  @@index([customerId], map: "customer_metafields_customerId_idx")
-  @@index([namespace, key], map: "customer_metafields_namespace_key_idx")
-  @@map("customer_metafields")
-}
-
-model Address {
-  id         String   @id @db.VarChar(36)
-  customerId String?  @map("customer_id") @db.VarChar(36)
-  orderId    String?  @map("order_id") @db.VarChar(36)
-  type       String   @db.VarChar(20)
-  firstName  String?  @map("first_name") @db.VarChar(255)
-  lastName   String?  @map("last_name") @db.VarChar(255)
-  company    String?  @db.VarChar(255)
-  address1   String   @db.VarChar(255)
-  address2   String?  @db.VarChar(255)
-  city       String   @db.VarChar(100)
-  state      String?  @db.VarChar(100)
-  zip        String?  @db.VarChar(20)
-  country    String   @db.VarChar(100)
-  phone      String?  @db.VarChar(50)
-  isDefault  Boolean  @default(false) @map("is_default")
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  order    Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([customerId], map: "addresses_customerId_idx")
-  @@index([orderId], map: "addresses_orderId_idx")
-  @@map("addresses")
-}
-
-model Order {
-  id                String    @id @db.VarChar(36)
-  orderNumber       String    @unique @map("order_number") @db.VarChar(50)
-  customerId        String?   @map("customer_id") @db.VarChar(36)
-  email             String?   @db.VarChar(255)
-  status            String    @db.VarChar(50)
-  financialStatus   String?   @map("financial_status") @db.VarChar(50)
-  fulfillmentStatus String?   @map("fulfillment_status") @db.VarChar(50)
-  subtotal          Decimal   @db.Decimal(10, 2)
-  tax               Decimal   @default(0) @db.Decimal(10, 2)
-  shipping          Decimal   @default(0) @db.Decimal(10, 2)
-  discount          Decimal   @default(0) @db.Decimal(10, 2)
-  total             Decimal   @db.Decimal(10, 2)
-  currency          String    @default("BAM") @db.VarChar(3)
-  note              String?   @db.Text
-  cancelledAt       DateTime? @map("cancelled_at") @db.Timestamp(3)
-  cancelledReason   String?   @map("cancelled_reason") @db.Text
-  trackingNumber    String?   @map("tracking_number") @db.VarChar(255)
-  discountId        String?   @map("discount_id") @db.VarChar(36)
-  discountCode      String?   @map("discount_code") @db.VarChar(100)
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  customer     Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  usedDiscount Discount?        @relation(fields: [discountId], references: [id], onDelete: SetNull)
-  items        OrderItem[]
-  metafields   OrderMetafield[]
-  addresses    Address[]
-
-  @@index([orderNumber], map: "orders_orderNumber_idx")
-  @@index([customerId], map: "orders_customerId_idx")
-  @@index([status], map: "orders_status_idx")
-  @@index([discountId], map: "orders_discountId_idx")
-  @@map("orders")
-}
-
-model OrderItem {
-  id           String   @id @db.VarChar(36)
-  orderId      String   @map("order_id") @db.VarChar(36)
-  productId    String?  @map("product_id") @db.VarChar(36)
-  variantId    String?  @map("variant_id") @db.VarChar(36)
-  title        String   @db.VarChar(255)
-  sku          String?  @db.VarChar(100)
-  quantity     Int
-  price        Decimal  @db.Decimal(10, 2)
-  total        Decimal  @db.Decimal(10, 2)
-  variantTitle String?  @map("variant_title") @db.VarChar(255)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
-  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
-
-  @@index([orderId], map: "order_items_orderId_idx")
-  @@index([productId], map: "order_items_productId_idx")
-  @@index([variantId], map: "order_items_variantId_idx")
-  @@map("order_items")
-}
-
-model OrderMetafield {
-  id        String   @id @db.VarChar(36)
-  orderId   String   @map("order_id") @db.VarChar(36)
-  namespace String   @db.VarChar(100)
-  key       String   @db.VarChar(100)
-  value     String?  @db.Text
-  type      String   @db.VarChar(50)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([orderId], map: "order_metafields_orderId_idx")
-  @@index([namespace, key], map: "order_metafields_namespace_key_idx")
-  @@map("order_metafields")
-}
-
-model Discount {
+model discounts {
   id              String    @id @db.VarChar(36)
-  code            String    @unique @db.VarChar(100)
+  code            String    @unique(map: "discounts_code_unique") @db.VarChar(100)
   type            String    @db.VarChar(50)
   value           Decimal   @db.Decimal(10, 2)
   minimumPurchase Decimal?  @map("minimum_purchase") @db.Decimal(10, 2)
@@ -551,99 +199,176 @@ model Discount {
   endsAt          DateTime? @map("ends_at") @db.Timestamp(3)
   active          Boolean   @default(true)
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  carts           cart[]
+  orders          orders[]
 
-  carts  Cart[]
-  orders Order[]
-
-  @@index([code], map: "discounts_code_idx")
-  @@index([active], map: "discounts_active_idx")
-  @@map("discounts")
+  @@index([active])
+  @@index([code])
 }
 
-model Cart {
-  id         String    @id @db.VarChar(36)
-  customerId String?   @map("customer_id") @db.VarChar(36)
-  sessionId  String?   @map("session_id") @db.VarChar(255)
-  discountId String?   @map("discount_id") @db.VarChar(36)
-  expiresAt  DateTime? @map("expires_at") @db.Timestamp(3)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+model inventory {
+  id        String           @id @db.VarChar(36)
+  variantId String           @unique(map: "inventory_variant_id_unique") @map("variant_id") @db.VarChar(36)
+  available Int              @default(0)
+  reserved  Int              @default(0)
+  onHand    Int              @default(0) @map("on_hand")
+  committed Int              @default(0)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  variant   product_variants @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
-  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  discount Discount? @relation(fields: [discountId], references: [id], onDelete: SetNull)
-  items    CartItem[]
-
-  @@index([customerId], map: "cart_customerId_idx")
-  @@index([sessionId], map: "cart_sessionId_idx")
-  @@map("cart")
+  @@index([variantId], map: "inventory_variantId_idx")
 }
 
-model CartItem {
+model inventory_tracking {
+  id                String           @id @db.VarChar(36)
+  variantId         String           @map("variant_id") @db.VarChar(36)
+  productId         String           @map("product_id") @db.VarChar(36)
+  type              String           @db.VarChar(50)
+  quantity          Int
+  previousAvailable Int              @map("previous_available")
+  previousReserved  Int              @map("previous_reserved")
+  newAvailable      Int              @map("new_available")
+  newReserved       Int              @map("new_reserved")
+  reason            String?          @db.Text
+  referenceType     String?          @map("reference_type") @db.VarChar(50)
+  referenceId       String?          @map("reference_id") @db.VarChar(36)
+  userId            String?          @map("user_id") @db.VarChar(36)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
+  product           products         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user              user?            @relation(fields: [userId], references: [id])
+  variant           product_variants @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt], map: "inventory_tracking_createdAt_idx")
+  @@index([productId], map: "inventory_tracking_productId_idx")
+  @@index([referenceType, referenceId], map: "inventory_tracking_referenceType_referenceId_idx")
+  @@index([type])
+  @@index([userId], map: "inventory_tracking_userId_idx")
+  @@index([variantId], map: "inventory_tracking_variantId_idx")
+}
+
+model media {
+  id               String                  @id @db.VarChar(36)
+  filename         String                  @db.VarChar(255)
+  originalFilename String                  @map("original_filename") @db.VarChar(255)
+  mimeType         String                  @map("mime_type") @db.VarChar(100)
+  size             Int
+  url              String                  @db.Text
+  alt              String?                 @db.Text
+  type             String                  @db.VarChar(50)
+  storage          String                  @default("local") @db.VarChar(50)
+  metadata         Json?
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt        DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  productMedia     product_media[]
+  variantMedia     product_variant_media[]
+  adsMedia         product_ads_media[]
+
+  @@index([mimeType], map: "media_mimeType_idx")
+  @@index([type])
+}
+
+model navigation {
+  id       String       @id @db.VarChar(36)
+  parentId String?      @map("parent_id") @db.VarChar(36)
+  title    String       @db.VarChar(255)
+  url      String       @db.VarChar(500)
+  icon     String?      @db.VarChar(100)
+  position Int          @default(0)
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  image    String?      @db.VarChar(500)
+  parent   navigation?  @relation("navigationTonavigation", fields: [parentId], references: [id], onDelete: Cascade)
+  children navigation[] @relation("navigationTonavigation")
+
+  @@index([parentId], map: "navigation_parentId_idx")
+  @@index([position])
+}
+
+model order_items {
+  id           String            @id @db.VarChar(36)
+  orderId      String            @map("order_id") @db.VarChar(36)
+  productId    String?           @map("product_id") @db.VarChar(36)
+  variantId    String?           @map("variant_id") @db.VarChar(36)
+  title        String            @db.VarChar(255)
+  sku          String?           @db.VarChar(100)
+  quantity     Int
+  price        Decimal           @db.Decimal(10, 2)
+  total        Decimal           @db.Decimal(10, 2)
+  variantTitle String?           @map("variant_title") @db.VarChar(255)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt    DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  order        orders            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product      products?         @relation(fields: [productId], references: [id])
+  variant      product_variants? @relation(fields: [variantId], references: [id])
+
+  @@index([orderId], map: "order_items_orderId_idx")
+  @@index([productId], map: "order_items_productId_idx")
+  @@index([variantId], map: "order_items_variantId_idx")
+}
+
+model order_metafields {
   id        String   @id @db.VarChar(36)
-  cartId    String   @map("cart_id") @db.VarChar(36)
-  productId String?  @map("product_id") @db.VarChar(36)
-  variantId String?  @map("variant_id") @db.VarChar(36)
-  quantity  Int
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  cart    Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  product Product?        @relation(fields: [productId], references: [id], onDelete: Cascade)
-  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
-
-  @@index([cartId], map: "cart_items_cartId_idx")
-  @@index([productId], map: "cart_items_productId_idx")
-  @@index([variantId], map: "cart_items_variantId_idx")
-  @@map("cart_items")
-}
-
-model ShippingMethod {
-  id                 String   @id @db.VarChar(36)
-  name               String   @db.VarChar(255)
-  description        String?  @db.Text
-  price              Decimal  @default(0) @db.Decimal(10, 2)
-  isFreeShipping     Boolean  @default(false) @map("is_free_shipping")
-  minimumOrderAmount Decimal? @map("minimum_order_amount") @db.Decimal(10, 2)
-  active             Boolean  @default(true)
-  position           Int      @default(0)
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  @@index([name], map: "shipping_methods_name_idx")
-  @@map("shipping_methods")
-}
-
-model PaymentMethod {
-  id          String   @id @db.VarChar(36)
-  name        String   @db.VarChar(255)
-  description String?  @db.Text
-  active      Boolean  @default(true)
-  position    Int      @default(0)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  @@index([name], map: "payment_methods_name_idx")
-  @@map("payment_methods")
-}
-
-model Setting {
-  id        String   @id @db.VarChar(36)
-  key       String   @unique @db.VarChar(255)
+  orderId   String   @map("order_id") @db.VarChar(36)
+  namespace String   @db.VarChar(100)
+  key       String   @db.VarChar(100)
   value     String?  @db.Text
   type      String   @db.VarChar(50)
-  group     String?  @db.VarChar(100)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  order     orders   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  @@index([key], map: "settings_key_idx")
-  @@map("settings")
+  @@index([namespace, key])
+  @@index([orderId], map: "order_metafields_orderId_idx")
 }
 
-model Page {
+model orders {
+  id                String             @id @db.VarChar(36)
+  orderNumber       String             @unique(map: "orders_order_number_unique") @map("order_number") @db.VarChar(50)
+  customerId        String?            @map("customer_id") @db.VarChar(36)
+  email             String?            @db.VarChar(255)
+  status            String             @db.VarChar(50)
+  financialStatus   String?            @map("financial_status") @db.VarChar(50)
+  fulfillmentStatus String?            @map("fulfillment_status") @db.VarChar(50)
+  subtotal          Decimal            @db.Decimal(10, 2)
+  tax               Decimal            @default(0.00) @db.Decimal(10, 2)
+  shipping          Decimal            @default(0.00) @db.Decimal(10, 2)
+  discount          Decimal            @default(0.00) @db.Decimal(10, 2)
+  total             Decimal            @db.Decimal(10, 2)
+  currency          String             @default("BAM") @db.VarChar(3)
+  note              String?            @db.Text
+  cancelledAt       DateTime?          @map("cancelled_at") @db.Timestamp(3)
+  cancelledReason   String?            @map("cancelled_reason") @db.Text
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
+  discountCode      String?            @map("discount_code") @db.VarChar(100)
+  discountId        String?            @map("discount_id") @db.VarChar(36)
+  trackingNumber       String?            @map("tracking_number") @db.VarChar(255)
+  shippingCompany      String?            @map("shipping_company") @db.VarChar(255)
+  paymentMethodId      String?            @map("payment_method_id") @db.VarChar(36)
+  paymentMethodTitle   String?            @map("payment_method_title") @db.VarChar(255)
+  paymentMethodType    String?            @map("payment_method_type") @db.VarChar(20)
+  shippingMethodId     String?            @map("shipping_method_id") @db.VarChar(36)
+  shippingMethodTitle  String?            @map("shipping_method_title") @db.VarChar(255)
+  isLocalPickup        Boolean            @default(false) @map("is_local_pickup")
+  updatedAt            DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  addresses            addresses[]
+  items             order_items[]
+  metafields        order_metafields[]
+  customer          customers?         @relation(fields: [customerId], references: [id])
+  discountRef       discounts?         @relation(fields: [discountId], references: [id])
+  abandonedCheckout abandoned_checkouts?
+
+  @@index([customerId], map: "orders_customerId_idx")
+  @@index([discountId], map: "orders_discountId_idx")
+  @@index([orderNumber], map: "orders_orderNumber_idx")
+  @@index([status])
+}
+
+model pages {
   id             String   @id @db.VarChar(36)
   title          String   @db.VarChar(255)
-  slug           String   @unique @db.VarChar(255)
+  slug           String   @unique(map: "pages_slug_unique") @db.VarChar(255)
   content        String   @db.Text
   excerpt        String?  @db.Text
   status         String   @default("draft") @db.VarChar(50)
@@ -651,119 +376,598 @@ model Page {
   seoTitle       String?  @map("seo_title") @db.VarChar(255)
   seoDescription String?  @map("seo_description") @db.Text
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  @@index([slug], map: "pages_slug_idx")
-  @@index([status], map: "pages_status_idx")
-  @@map("pages")
+  @@index([slug])
+  @@index([status])
 }
 
-model Navigation {
+model payment_methods {
+  id          String   @id @db.VarChar(36)
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  type        String   @default("cod") @db.VarChar(20) // cod, card, bank_transfer
+  active      Boolean  @default(true)
+  position    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  @@index([name])
+}
+
+model product_categories {
+  id          String               @id @db.VarChar(36)
+  name        String               @db.VarChar(255)
+  slug        String               @unique(map: "product_categories_slug_unique") @db.VarChar(255)
+  description String?              @db.Text
+  image       String?              @db.Text
+  parentId    String?              @map("parent_id") @db.VarChar(36)
+  position    Int                  @default(0)
+  active      Boolean              @default(true)
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt   DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  parent      product_categories?  @relation("product_categoriesToproduct_categories", fields: [parentId], references: [id])
+  children    product_categories[] @relation("product_categoriesToproduct_categories")
+  products    products[]
+
+  @@index([parentId], map: "product_categories_parentId_idx")
+  @@index([slug])
+}
+
+model product_media {
   id        String   @id @db.VarChar(36)
-  parentId  String?  @map("parent_id") @db.VarChar(36)
-  title     String   @db.VarChar(255)
-  url       String   @db.VarChar(500)
-  icon      String?  @db.VarChar(100)
-  image     String?  @db.VarChar(500)
+  productId String   @map("product_id") @db.VarChar(36)
+  mediaId   String   @map("media_id") @db.VarChar(36)
   position  Int      @default(0)
+  isPrimary Boolean  @default(false) @map("is_primary")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  media     media    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  product   products @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  parent   Navigation?  @relation("NavigationParent", fields: [parentId], references: [id], onDelete: Cascade)
-  children Navigation[] @relation("NavigationParent")
-
-  @@index([parentId], map: "navigation_parentId_idx")
-  @@index([position], map: "navigation_position_idx")
-  @@map("navigation")
+  @@index([mediaId], map: "product_media_mediaId_idx")
+  @@index([position])
+  @@index([productId], map: "product_media_productId_idx")
 }
 
-model Collection {
-  id                  String    @id @db.VarChar(36)
-  name                String    @db.VarChar(255)
-  slug                String    @unique @db.VarChar(255)
-  description         String?   @db.Text
-  image               String?   @db.Text
-  ruleMatch           String    @default("all") @map("rule_match") @db.VarChar(10)
-  sortOrder           String    @default("manual") @map("sort_order") @db.VarChar(50)
-  active              Boolean   @default(true)
-  seoTitle            String?   @map("seo_title") @db.VarChar(255)
-  seoDescription      String?   @map("seo_description") @db.Text
-  needsRegeneration   Boolean   @default(false) @map("needs_regeneration")
-  lastRegeneratedAt   DateTime? @map("last_regenerated_at") @db.Timestamp(3)
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamp(3)
+model product_metafields {
+  id        String   @id @db.VarChar(36)
+  productId String   @map("product_id") @db.VarChar(36)
+  namespace String   @db.VarChar(100)
+  key       String   @db.VarChar(100)
+  value     String?  @db.Text
+  type      String   @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  product   products @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  rules    CollectionRule[]
-  products CollectionProduct[]
-
-  @@index([slug], map: "collections_slug_idx")
-  @@index([active], map: "collections_active_idx")
-  @@index([needsRegeneration], map: "collections_needs_regeneration_idx")
-  @@map("collections")
+  @@index([namespace, key])
+  @@index([productId], map: "product_metafields_productId_idx")
 }
 
-model CollectionRule {
-  id           String   @id @db.VarChar(36)
-  collectionId String   @map("collection_id") @db.VarChar(36)
-  ruleType     String   @map("rule_type") @db.VarChar(50)
-  operator     String   @db.VarChar(50)
-  value        String   @db.Text
-  position     Int      @default(0)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+model product_ads_media {
+  id        String            @id @db.VarChar(36)
+  productId String            @map("product_id") @db.VarChar(36)
+  variantId String?           @map("variant_id") @db.VarChar(36)
+  mediaType String            @map("media_type") @db.VarChar(50)
+  mediaId   String            @map("media_id") @db.VarChar(36)
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  product   products          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant   product_variants? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  media     media             @relation(fields: [mediaId], references: [id], onDelete: Cascade)
 
-  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-
-  @@index([collectionId], map: "collection_rules_collectionId_idx")
-  @@index([ruleType], map: "collection_rules_ruleType_idx")
-  @@map("collection_rules")
+  @@index([productId], map: "product_ads_media_productId_idx")
+  @@index([variantId], map: "product_ads_media_variantId_idx")
+  @@index([mediaId], map: "product_ads_media_mediaId_idx")
 }
 
-model CollectionProduct {
-  id           String   @id @db.VarChar(36)
-  collectionId String   @map("collection_id") @db.VarChar(36)
-  productId    String   @map("product_id") @db.VarChar(36)
-  position     Int      @default(0)
-  isManual     Boolean  @default(false) @map("is_manual")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+model product_option_values {
+  id             String                    @id @db.VarChar(36)
+  optionId       String                    @map("option_id") @db.VarChar(36)
+  name           String                    @db.VarChar(255)
+  position       Int                       @default(0)
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  option         product_options           @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  variantOptions product_variant_options[]
 
-  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@index([collectionId], map: "collection_products_collectionId_idx")
-  @@index([productId], map: "collection_products_productId_idx")
-  @@index([position], map: "collection_products_position_idx")
-  @@map("collection_products")
+  @@index([optionId], map: "product_option_values_optionId_idx")
 }
 
-model Wishlist {
+model product_options {
+  id             String                    @id @db.VarChar(36)
+  productId      String                    @map("product_id") @db.VarChar(36)
+  name           String                    @db.VarChar(255)
+  position       Int                       @default(0)
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  values         product_option_values[]
+  product        products                  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantOptions product_variant_options[]
+
+  @@index([productId], map: "product_options_productId_idx")
+}
+
+model product_tags {
+  id        String                     @id @db.VarChar(36)
+  name      String                     @db.VarChar(255)
+  slug      String                     @unique(map: "product_tags_slug_unique") @db.VarChar(255)
+  createdAt DateTime                   @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  products  product_tags_to_products[]
+
+  @@index([slug])
+}
+
+model product_tags_to_products {
+  productId String       @map("product_id") @db.VarChar(36)
+  tagId     String       @map("tag_id") @db.VarChar(36)
+  product   products     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tag       product_tags @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([productId, tagId])
+  @@index([productId], map: "product_tags_to_products_productId_idx")
+  @@index([tagId], map: "product_tags_to_products_tagId_idx")
+}
+
+model product_variant_media {
+  id        String           @id @db.VarChar(36)
+  variantId String           @map("variant_id") @db.VarChar(36)
+  mediaId   String           @map("media_id") @db.VarChar(36)
+  position  Int              @default(0)
+  isPrimary Boolean          @default(false) @map("is_primary")
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  media     media            @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  variant   product_variants @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([mediaId], map: "product_variant_media_mediaId_idx")
+  @@index([position])
+  @@index([variantId], map: "product_variant_media_variantId_idx")
+}
+
+model product_variant_options {
+  id            String                @id @db.VarChar(36)
+  variantId     String                @map("variant_id") @db.VarChar(36)
+  optionId      String                @map("option_id") @db.VarChar(36)
+  optionValueId String                @map("option_value_id") @db.VarChar(36)
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt     DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  option        product_options       @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  optionValue   product_option_values @relation(fields: [optionValueId], references: [id], onDelete: Cascade)
+  variant       product_variants      @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([optionId], map: "product_variant_options_optionId_idx")
+  @@index([optionValueId], map: "product_variant_options_optionValueId_idx")
+  @@index([variantId], map: "product_variant_options_variantId_idx")
+}
+
+model product_variants {
+  id             String                    @id @db.VarChar(36)
+  productId      String                    @map("product_id") @db.VarChar(36)
+  sku            String?                   @db.VarChar(100)
+  barcode        String?                   @db.VarChar(100)
+  price          Decimal?                  @db.Decimal(10, 2)
+  compareAtPrice Decimal?                  @map("compare_at_price") @db.Decimal(10, 2)
+  cost           Decimal?                  @db.Decimal(10, 2)
+  weight         Decimal?                  @db.Decimal(10, 2)
+  position       Int                       @default(0)
+  isDefault      Boolean                   @default(false) @map("is_default")
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  cartItems      cart_items[]
+  inventory      inventory?
+  tracking       inventory_tracking[]
+  orderItems     order_items[]
+  media          product_variant_media[]
+  variantOptions product_variant_options[]
+  adsMedia       product_ads_media[]
+  product        products                  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventoryBatches    inventory_batches[]
+  purchaseOrderItems  purchase_order_items[]
+  costHistory         variant_cost_history[]
+
+  @@index([productId], map: "product_variants_productId_idx")
+  @@index([sku])
+}
+
+// ==================== VARIANT COST HISTORY ====================
+// Track cost price changes over time
+
+model variant_cost_history {
+  id              String    @id @db.VarChar(36)
+  variantId       String    @map("variant_id") @db.VarChar(36)
+  productId       String    @map("product_id") @db.VarChar(36)
+
+  // Cost values
+  previousCost    Decimal?  @map("previous_cost") @db.Decimal(10, 2)
+  newCost         Decimal   @map("new_cost") @db.Decimal(10, 2)
+
+  // Source of change
+  source          String    @db.VarChar(50)  // purchase_order, manual, import
+  referenceType   String?   @map("reference_type") @db.VarChar(50)  // purchase_order, etc
+  referenceId     String?   @map("reference_id") @db.VarChar(36)
+
+  // Additional info
+  notes           String?   @db.Text
+  userId          String?   @map("user_id") @db.VarChar(36)
+
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+
+  // Relations
+  variant         product_variants @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  product         products         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user            user?            @relation(fields: [userId], references: [id])
+
+  @@index([variantId])
+  @@index([productId])
+  @@index([createdAt])
+}
+
+model products {
+  id               String                     @id @db.VarChar(36)
+  name             String                     @db.VarChar(255)
+  slug             String                     @unique(map: "products_slug_unique") @db.VarChar(255)
+  description      String?                    @db.Text
+  sku              String?                    @db.VarChar(100)
+  price            Decimal                    @db.Decimal(10, 2)
+  compareAtPrice   Decimal?                   @map("compare_at_price") @db.Decimal(10, 2)
+  cost             Decimal?                   @db.Decimal(10, 2)
+  trackQuantity    Boolean                    @default(true) @map("track_quantity")
+  status           String                     @default("draft") @db.VarChar(50)
+  featured         Boolean                    @default(false)
+  vendorId         String?                    @map("vendor_id") @db.VarChar(36)
+  categoryId       String?                    @map("category_id") @db.VarChar(36)
+  material         String?                    @db.Text
+  weight           Decimal                    @default(1.00) @db.Decimal(10, 2)
+  weightUnit       String?                    @default("kg") @map("weight_unit") @db.VarChar(10)
+  requiresShipping Boolean                    @default(true) @map("requires_shipping")
+  taxIncluded      Boolean                    @default(false) @map("tax_included")
+  internalNote     String?                    @map("internal_note") @db.Text
+  createdAt        DateTime                   @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt        DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  cartItems        cart_items[]
+  collections      collection_products[]
+  tracking         inventory_tracking[]
+  orderItems       order_items[]
+  media            product_media[]
+  adsMedia         product_ads_media[]
+  metafields       product_metafields[]
+  options          product_options[]
+  tags             product_tags_to_products[]
+  variants         product_variants[]
+  wishlistItems    wishlist_items[]
+  category         product_categories?        @relation(fields: [categoryId], references: [id])
+  vendor           vendors?                   @relation(fields: [vendorId], references: [id])
+  inventoryBatches    inventory_batches[]
+  purchaseOrderItems  purchase_order_items[]
+  costHistory         variant_cost_history[]
+
+  @@index([categoryId], map: "products_categoryId_idx")
+  @@index([slug])
+  @@index([status])
+  @@index([vendorId], map: "products_vendorId_idx")
+}
+
+model session {
+  id        String   @id @db.VarChar(36)
+  expiresAt DateTime @map("expires_at") @db.Timestamp(3)
+  token     String   @unique(map: "session_token_unique") @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  ipAddress String?  @map("ip_address") @db.Text
+  userAgent String?  @map("user_agent") @db.Text
+  userId    String   @map("user_id") @db.VarChar(36)
+  user      user     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "session_userId_idx")
+}
+
+model settings {
+  id        String   @id @db.VarChar(36)
+  key       String   @unique(map: "settings_key_unique") @db.VarChar(255)
+  value     String?  @db.Text
+  type      String   @db.VarChar(50)
+  group     String?  @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  @@index([key])
+}
+
+model shipping_methods {
+  id                 String   @id @db.VarChar(36)
+  name               String   @db.VarChar(255)
+  description        String?  @db.Text
+  price              Decimal  @default(0.00) @db.Decimal(10, 2)
+  isFreeShipping     Boolean  @default(false) @map("is_free_shipping")
+  isLocalPickup      Boolean  @default(false) @map("is_local_pickup")
+  minimumOrderAmount Decimal? @map("minimum_order_amount") @db.Decimal(10, 2)
+  active             Boolean  @default(true)
+  position           Int      @default(0)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  @@index([name])
+}
+
+model user {
+  id          String               @id @db.VarChar(36)
+  name        String               @db.VarChar(255)
+  email       String               @unique(map: "user_email_unique") @db.VarChar(255)
+  emailVerified Boolean            @default(false) @map("email_verified")
+  image       String?              @db.Text
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt   DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  role        String               @default("customer") @db.VarChar(50)
+  phoneNumber String?              @map("phone_number") @db.Text
+  accounts    account[]
+  tracking    inventory_tracking[]
+  sessions    session[]
+  inventoryBatches inventory_batches[]
+  purchaseOrders   purchase_orders[]
+  costHistory      variant_cost_history[]
+}
+
+model vendors {
+  id             String            @id @db.VarChar(36)
+  name           String            @db.VarChar(255)
+  email          String?           @db.VarChar(255)
+  phone          String?           @db.VarChar(50)
+  website        String?           @db.VarChar(255)
+  address        String?           @db.Text
+  active         Boolean           @default(true)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  products       products[]
+  purchaseOrders purchase_orders[]
+
+  @@index([name])
+}
+
+model verification {
   id         String   @id @db.VarChar(36)
-  customerId String?  @map("customer_id") @db.VarChar(36)
-  sessionId  String?  @map("session_id") @db.VarChar(255)
+  identifier String   @db.VarChar(255)
+  value      String   @db.Text
+  expiresAt  DateTime @map("expires_at") @db.Timestamp(3)
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
 
-  customer Customer?      @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  items    WishlistItem[]
+  @@index([identifier])
+}
+
+model wishlist {
+  id         String          @id @db.VarChar(36)
+  customerId String?         @map("customer_id") @db.VarChar(36)
+  sessionId  String?         @map("session_id") @db.VarChar(255)
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  items      wishlist_items[]
 
   @@index([customerId], map: "wishlist_customerId_idx")
   @@index([sessionId], map: "wishlist_sessionId_idx")
-  @@map("wishlist")
 }
 
-model WishlistItem {
+model wishlist_items {
   id         String   @id @db.VarChar(36)
   wishlistId String   @map("wishlist_id") @db.VarChar(36)
   productId  String   @map("product_id") @db.VarChar(36)
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(3)
-
-  wishlist Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
-  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  wishlist   wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  product    products @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([wishlistId, productId])
-  @@index([wishlistId], map: "wishlist_items_wishlistId_idx")
   @@index([productId], map: "wishlist_items_productId_idx")
-  @@map("wishlist_items")
+  @@index([wishlistId], map: "wishlist_items_wishlistId_idx")
+}
+
+model email_logs {
+  id           String    @id @db.VarChar(36)
+  to           String    @db.VarChar(255)
+  subject      String    @db.VarChar(500)
+  type         String    @db.VarChar(50) // welcome, order_confirmation, order_fulfilled, order_cancelled
+  status       String    @db.VarChar(20) // pending, sent, failed
+  errorMessage String?   @map("error_message") @db.Text
+  metadata     String?   @db.Text // JSON string for additional data like orderId, customerName
+  sentAt       DateTime? @map("sent_at") @db.Timestamp(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  @@index([to])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model abandoned_checkouts {
+  id               String    @id @db.VarChar(36)
+  email            String    @db.VarChar(255)
+  cartData         Json      @map("cart_data")
+  customerName     String?   @map("customer_name") @db.VarChar(255)
+  phone            String?   @db.VarChar(50)
+  shippingAddress  Json?     @map("shipping_address")
+  billingAddress   Json?     @map("billing_address")
+  subtotal         Decimal   @db.Decimal(10, 2)
+  checkoutUrl      String?   @map("checkout_url") @db.Text
+
+  // Recovery tracking
+  status           String    @default("pending") @db.VarChar(20) // pending, email_sent, recovered, expired
+  emailSentAt      DateTime? @map("email_sent_at") @db.Timestamp(3)
+  emailSentCount   Int       @default(0) @map("email_sent_count")
+  nextEmailAt      DateTime? @map("next_email_at") @db.Timestamp(3) // When to send the next email
+  recoveredAt      DateTime? @map("recovered_at") @db.Timestamp(3)
+  recoveredOrderId String?   @unique @map("recovered_order_id") @db.VarChar(36)
+
+  // Timestamps
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamp(3)
+
+  // Relations
+  recoveredOrder   orders?   @relation(fields: [recoveredOrderId], references: [id])
+
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+  @@index([nextEmailAt])
+  @@index([recoveredOrderId], map: "abandoned_checkouts_recoveredOrderId_idx")
+}
+
+model footer_config {
+  id            String   @id @db.VarChar(36)
+  logoUrl       String?  @map("logo_url") @db.Text
+  subtitle      String?  @db.Text
+  columns       Json     @default("[]") // Array of { id, title, links: [{ id, title, url }] }
+  bgColor       String   @default("#ffffff") @map("bg_color") @db.VarChar(20)
+  textColor     String   @default("#0f172a") @map("text_color") @db.VarChar(20)
+  darkBgColor   String   @default("#0f172a") @map("dark_bg_color") @db.VarChar(20)
+  darkTextColor String   @default("#f8fafc") @map("dark_text_color") @db.VarChar(20)
+  showSocials   Boolean  @default(true) @map("show_socials")
+  facebookUrl   String?  @map("facebook_url") @db.VarChar(500)
+  instagramUrl  String?  @map("instagram_url") @db.VarChar(500)
+  twitterUrl    String?  @map("twitter_url") @db.VarChar(500)
+  tiktokUrl     String?  @map("tiktok_url") @db.VarChar(500)
+  youtubeUrl    String?  @map("youtube_url") @db.VarChar(500)
+  copyrightText String?  @map("copyright_text") @db.VarChar(500)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+}
+
+// ==================== INVENTORY BATCHES ====================
+// Tracks sell-through rate per restock cycle
+
+model inventory_batches {
+  id                String           @id @db.VarChar(36)
+  variantId         String           @map("variant_id") @db.VarChar(36)
+  productId         String           @map("product_id") @db.VarChar(36)
+
+  // Batch quantities
+  quantityAdded     Int              @map("quantity_added")
+  quantitySold      Int              @default(0) @map("quantity_sold")
+  quantityRemaining Int              @map("quantity_remaining")
+
+  // Cost tracking (optional, for profit analysis)
+  costPerUnit       Decimal?         @map("cost_per_unit") @db.Decimal(10, 2)
+
+  // Timing
+  restockedAt       DateTime         @map("restocked_at") @db.Timestamp(3)
+  soldOutAt         DateTime?        @map("sold_out_at") @db.Timestamp(3)
+
+  // Calculated metrics
+  sellThroughRate   Decimal?         @map("sell_through_rate") @db.Decimal(5, 2)
+  daysToSellOut     Int?             @map("days_to_sell_out")
+
+  // Metadata
+  source            String           @default("manual") @db.VarChar(50) // manual, initial, migration, purchase_order
+  notes             String?          @db.Text
+  userId            String?          @map("user_id") @db.VarChar(36)
+
+  // Link to PO item (if created via purchase order)
+  purchaseOrderItemId String?        @map("purchase_order_item_id") @db.VarChar(36)
+
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt         DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  // Relations
+  variant           product_variants @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  product           products         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user              user?            @relation(fields: [userId], references: [id])
+  purchaseOrderItem purchase_order_items? @relation(fields: [purchaseOrderItemId], references: [id])
+
+  @@index([variantId])
+  @@index([productId])
+  @@index([restockedAt])
+  @@index([soldOutAt])
+  @@index([sellThroughRate])
+  @@index([userId])
+  @@index([purchaseOrderItemId])
+}
+
+// ==================== PURCHASE ORDERS ====================
+// Track incoming inventory before it arrives
+
+model purchase_orders {
+  id               String    @id @db.VarChar(36)
+  orderNumber      String    @unique @map("order_number") @db.VarChar(50)
+
+  // Vendor info
+  vendorId         String?   @map("vendor_id") @db.VarChar(36)
+  vendorName       String    @map("vendor_name") @db.VarChar(255)  // Denormalized for history
+
+  // Status: draft, ordered, partially_received, received, cancelled
+  status           String    @default("draft") @db.VarChar(50)
+
+  // Dates
+  orderDate        DateTime? @map("order_date") @db.Timestamp(3)
+  expectedDate     DateTime? @map("expected_date") @db.Timestamp(3)
+  receivedDate     DateTime? @map("received_date") @db.Timestamp(3)
+
+  // Totals (calculated)
+  totalItems       Int       @default(0) @map("total_items")
+  totalQuantity    Int       @default(0) @map("total_quantity")
+  receivedQuantity Int       @default(0) @map("received_quantity")
+  totalCost        Decimal   @default(0) @map("total_cost") @db.Decimal(10, 2)
+
+  // Metadata
+  notes            String?   @db.Text
+  userId           String?   @map("user_id") @db.VarChar(36)  // Created by
+
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  // Relations
+  vendor           vendors?   @relation(fields: [vendorId], references: [id])
+  user             user?      @relation(fields: [userId], references: [id])
+  items            purchase_order_items[]
+
+  @@index([status])
+  @@index([orderNumber])
+  @@index([vendorId])
+  @@index([expectedDate])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+// ==================== PURCHASE ORDER ITEMS ====================
+// Line items in purchase orders
+
+model purchase_order_items {
+  id                String    @id @db.VarChar(36)
+  purchaseOrderId   String    @map("purchase_order_id") @db.VarChar(36)
+
+  // Product reference
+  productId         String    @map("product_id") @db.VarChar(36)
+  variantId         String    @map("variant_id") @db.VarChar(36)
+
+  // Denormalized product info (for history)
+  productName       String    @map("product_name") @db.VarChar(255)
+  variantTitle      String?   @map("variant_title") @db.VarChar(255)
+  sku               String?   @db.VarChar(100)
+
+  // Quantities
+  quantityOrdered   Int       @map("quantity_ordered")
+  quantityReceived  Int       @default(0) @map("quantity_received")
+
+  // Cost
+  costPerUnit       Decimal   @map("cost_per_unit") @db.Decimal(10, 2)
+  totalCost         Decimal   @map("total_cost") @db.Decimal(10, 2)  // costPerUnit * quantityOrdered
+
+  // Status: pending, partially_received, received
+  status            String    @default("pending") @db.VarChar(50)
+
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(3)
+
+  // Relations
+  purchaseOrder     purchase_orders  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product           products         @relation(fields: [productId], references: [id])
+  variant           product_variants @relation(fields: [variantId], references: [id])
+  inventoryBatches  inventory_batches[]
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@index([variantId])
+  @@index([status])
 }

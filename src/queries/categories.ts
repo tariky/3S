@@ -22,7 +22,7 @@ export const slugCheckServerFn = createServerFn({ method: "POST" })
       currentSlug: string,
       currentCounter: number
     ): Promise<string> => {
-      const categories = await db.productCategory.findMany({
+      const categories = await db.product_categories.findMany({
         where: {
           slug: currentSlug,
           ...(excludeId ? { NOT: { id: excludeId } } : {}),
@@ -53,7 +53,7 @@ export const getCategoriesServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { search = "", page = 1, limit = 25 } = data;
 
-    const response = await db.productCategory.findMany({
+    const response = await db.product_categories.findMany({
       where: search
         ? { name: { contains: search } }
         : undefined,
@@ -62,7 +62,7 @@ export const getCategoriesServerFn = createServerFn({ method: "POST" })
     });
 
     // return total, hasNextPage, hasPreviousPage, nextCursor, previousCursor
-    const totalCount = await db.productCategory.count({
+    const totalCount = await db.product_categories.count({
       where: search
         ? { name: { contains: search } }
         : undefined,
@@ -99,7 +99,7 @@ export const createCategoryServerFn = createServerFn({ method: "POST" })
     // Insert category with generated ID and unique slug
     const categoryId = nanoid();
 
-    const category = await db.productCategory.create({
+    const category = await db.product_categories.create({
       data: {
         id: categoryId,
         name: data.name,
@@ -131,7 +131,7 @@ export const updateCategoryServerFn = createServerFn({ method: "POST" })
     });
 
     // Update category with unique slug
-    const category = await db.productCategory.update({
+    const category = await db.product_categories.update({
       where: { id: data.id },
       data: {
         name: data.name,
@@ -158,7 +158,7 @@ export const deleteCategoryServerFn = createServerFn({ method: "POST" })
     // Mark collections before deleting (so we have the category ID)
     await markCollectionsForRegeneration(["categoryId"], "category", data.id);
 
-    const category = await db.productCategory.delete({
+    const category = await db.product_categories.delete({
       where: { id: data.id },
     });
 

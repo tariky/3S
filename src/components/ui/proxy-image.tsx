@@ -46,6 +46,7 @@ export const ProxyImage = React.forwardRef<HTMLImageElement, ProxyImageProps>(
 	) => {
 		const [proxyUrl, setProxyUrl] = React.useState<string>("");
 		const [loading, setLoading] = React.useState(true);
+		const [imageLoaded, setImageLoaded] = React.useState(false);
 		const [error, setError] = React.useState(false);
 
 		React.useEffect(() => {
@@ -87,6 +88,10 @@ export const ProxyImage = React.forwardRef<HTMLImageElement, ProxyImageProps>(
 				});
 		}, [src, width, height, resizingType, quality, format]);
 
+		const handleImageLoad = React.useCallback(() => {
+			setImageLoaded(true);
+		}, []);
+
 		if (error && fallback) {
 			return <>{fallback}</>;
 		}
@@ -112,8 +117,13 @@ export const ProxyImage = React.forwardRef<HTMLImageElement, ProxyImageProps>(
 				alt={alt}
 				width={width}
 				height={height}
+				onLoad={handleImageLoad}
 				onError={() => setError(true)}
-				className={cn(className)}
+				className={cn(
+					"transition-[filter,opacity] duration-500",
+					!imageLoaded && "blur-sm opacity-80",
+					className
+				)}
 				loading="lazy"
 				{...props}
 			/>

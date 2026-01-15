@@ -26,7 +26,7 @@ export const getAllPagesServerFn = createServerFn({ method: "POST" })
 			whereConditions.status = status;
 		}
 
-		const allPages = await db.page.findMany({
+		const allPages = await db.pages.findMany({
 			where: Object.keys(whereConditions).length > 0 ? whereConditions : undefined,
 			orderBy: { createdAt: "desc" },
 		});
@@ -54,7 +54,7 @@ export const getPageByIdServerFn = createServerFn({ method: "POST" })
 		})
 	)
 	.handler(async ({ data }) => {
-		const page = await db.page.findUnique({
+		const page = await db.pages.findUnique({
 			where: { id: data.id },
 		});
 
@@ -82,7 +82,7 @@ export const getPageBySlugServerFn = createServerFn({ method: "POST" })
 		})
 	)
 	.handler(async ({ data }) => {
-		const page = await db.page.findFirst({
+		const page = await db.pages.findFirst({
 			where: { slug: data.slug },
 		});
 
@@ -106,7 +106,7 @@ export const getPublicPageBySlugServerFn = createServerFn({ method: "GET" })
 		})
 	)
 	.handler(async ({ data }) => {
-		const page = await db.page.findFirst({
+		const page = await db.pages.findFirst({
 			where: {
 				slug: data.slug,
 				status: "published",
@@ -143,7 +143,7 @@ export const createPageServerFn = createServerFn({ method: "POST" })
 		let counter = 1;
 
 		while (true) {
-			const existing = await db.page.findFirst({
+			const existing = await db.pages.findFirst({
 				where: { slug },
 				select: { id: true },
 			});
@@ -161,7 +161,7 @@ export const createPageServerFn = createServerFn({ method: "POST" })
 			}
 		}
 
-		await db.page.create({
+		await db.pages.create({
 			data: {
 				id: pageId,
 				title: data.title,
@@ -207,7 +207,7 @@ export const updatePageServerFn = createServerFn({ method: "POST" })
 			let counter = 1;
 
 			while (true) {
-				const existing = await db.page.findFirst({
+				const existing = await db.pages.findFirst({
 					where: { slug },
 					select: { id: true },
 				});
@@ -228,7 +228,7 @@ export const updatePageServerFn = createServerFn({ method: "POST" })
 			updateData.slug = slug;
 		}
 
-		await db.page.update({
+		await db.pages.update({
 			where: { id },
 			data: updateData,
 		});
@@ -244,7 +244,7 @@ export const deletePageServerFn = createServerFn({ method: "POST" })
 		})
 	)
 	.handler(async ({ data }) => {
-		await db.page.delete({
+		await db.pages.delete({
 			where: { id: data.id },
 		});
 

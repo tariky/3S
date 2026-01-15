@@ -120,8 +120,8 @@ export function ProductImageCarousel({
 
 	if (images.length === 0) {
 		return (
-			<div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
-				<span className="text-gray-400">Nema slike</span>
+			<div className="aspect-[4/5] lg:aspect-square bg-muted rounded-b-lg lg:rounded-lg flex items-center justify-center">
+				<span className="text-muted-foreground">Nema slike</span>
 			</div>
 		);
 	}
@@ -131,7 +131,7 @@ export function ProductImageCarousel({
 			{/* Main Carousel */}
 			<div className="relative group">
 				<div
-					className="overflow-hidden rounded-lg bg-gray-50"
+					className="overflow-hidden rounded-b-lg lg:rounded-lg bg-muted"
 					ref={emblaRef}
 					role="region"
 					aria-label="Product images"
@@ -140,14 +140,14 @@ export function ProductImageCarousel({
 						{images.map((image, index) => (
 							<div
 								key={index}
-								className="flex-[0_0_100%] min-w-0 relative aspect-square cursor-zoom-in"
+								className="flex-[0_0_100%] min-w-0 relative aspect-[4/5] lg:aspect-square cursor-zoom-in"
 								onClick={() => setLightboxOpen(true)}
 							>
 								<ProxyImage
 									src={image.url}
 									alt={image.alt || `${productName} - Image ${index + 1}`}
 									width={800}
-									height={800}
+									height={1000}
 									resizingType="fill"
 									className="w-full h-full object-cover"
 								/>
@@ -188,37 +188,18 @@ export function ProductImageCarousel({
 				)}
 			</div>
 
-			{/* Dot Indicators - Mobile */}
+			{/* Thumbnail Strip */}
 			{images.length > 1 && (
-				<div className="flex justify-center gap-1.5 lg:hidden">
-					{images.map((_, index) => (
-						<button
-							key={index}
-							onClick={() => scrollTo(index)}
-							className={cn(
-								"w-2 h-2 rounded-full transition-colors",
-								index === selectedIndex
-									? "bg-gray-900"
-									: "bg-gray-300"
-							)}
-							aria-label={`Go to image ${index + 1}`}
-						/>
-					))}
-				</div>
-			)}
-
-			{/* Thumbnail Strip - Desktop */}
-			{images.length > 1 && (
-				<div className="hidden lg:block overflow-hidden" ref={thumbsRef}>
+				<div className="overflow-hidden px-4 lg:px-0" ref={thumbsRef}>
 					<div className="flex gap-2">
 						{images.map((image, index) => (
 							<button
 								key={index}
 								onClick={() => scrollTo(index)}
 								className={cn(
-									"flex-[0_0_auto] w-20 h-20 rounded-md overflow-hidden border-2 transition-all",
+									"flex-[0_0_auto] w-16 h-16 sm:w-20 sm:h-20 rounded-md overflow-hidden border-2 transition-all",
 									index === selectedIndex
-										? "border-gray-900 opacity-100"
+										? "border-foreground opacity-100"
 										: "border-transparent opacity-60 hover:opacity-100"
 								)}
 								aria-label={`View image ${index + 1}`}

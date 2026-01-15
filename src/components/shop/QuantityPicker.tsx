@@ -55,7 +55,7 @@ export function QuantityPicker({
 	return (
 		<div
 			className={cn(
-				"inline-flex items-center border border-gray-200 rounded-md overflow-hidden",
+				"inline-flex items-center border border-border rounded-lg overflow-hidden bg-background",
 				styles.wrapper,
 				disabled && "opacity-50"
 			)}
@@ -70,8 +70,8 @@ export function QuantityPicker({
 					"flex items-center justify-center transition-colors",
 					styles.button,
 					canDecrement
-						? "hover:bg-gray-100 active:bg-gray-200 text-gray-700"
-						: "text-gray-300 cursor-not-allowed"
+						? "hover:bg-muted active:bg-muted/80 text-foreground"
+						: "text-muted-foreground/40 cursor-not-allowed"
 				)}
 				aria-label="Decrease quantity"
 			>
@@ -80,7 +80,7 @@ export function QuantityPicker({
 
 			<span
 				className={cn(
-					"flex items-center justify-center font-medium text-gray-900 select-none",
+					"flex items-center justify-center font-medium text-foreground select-none",
 					styles.text
 				)}
 				aria-live="polite"
@@ -97,8 +97,8 @@ export function QuantityPicker({
 					"flex items-center justify-center transition-colors",
 					styles.button,
 					canIncrement
-						? "hover:bg-gray-100 active:bg-gray-200 text-gray-700"
-						: "text-gray-300 cursor-not-allowed"
+						? "hover:bg-muted active:bg-muted/80 text-foreground"
+						: "text-muted-foreground/40 cursor-not-allowed"
 				)}
 				aria-label="Increase quantity"
 			>

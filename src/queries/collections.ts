@@ -55,7 +55,7 @@ const collectionSchema = z.object({
 export const getCollectionsServerFn = createServerFn({ method: "GET" })
   .middleware([adminMiddleware])
   .handler(async () => {
-    const allCollections = await db.collection.findMany({
+    const allCollections = await db.collections.findMany({
       select: {
         id: true,
         name: true,
@@ -74,7 +74,7 @@ export const getCollectionsServerFn = createServerFn({ method: "GET" })
     // Get product counts for each collection
     const collectionsWithCounts = await Promise.all(
       allCollections.map(async (collection) => {
-        const productCount = await db.collectionProduct.count({
+        const productCount = await db.collection_products.count({
           where: { collectionId: collection.id },
         });
 
@@ -102,7 +102,7 @@ export const getCollectionByIdServerFn = createServerFn({ method: "GET" })
   .middleware([adminMiddleware])
   .inputValidator(z.object({ collectionId: z.string() }))
   .handler(async ({ data }) => {
-    const collection = await db.collection.findFirst({
+    const collection = await db.collections.findFirst({
       where: { id: data.collectionId },
     });
 
@@ -111,7 +111,7 @@ export const getCollectionByIdServerFn = createServerFn({ method: "GET" })
     }
 
     // Get rules
-    const rules = await db.collectionRule.findMany({
+    const rules = await db.collection_rules.findMany({
       where: { collectionId: collection.id },
       orderBy: { position: "asc" },
     });
@@ -140,7 +140,7 @@ export const createCollectionServerFn = createServerFn({ method: "POST" })
     const collectionId = nanoid();
 
     // Create collection
-    await db.collection.create({
+    await db.collections.create({
       data: {
         id: collectionId,
         name: data.name,
@@ -157,7 +157,7 @@ export const createCollectionServerFn = createServerFn({ method: "POST" })
 
     // Create rules
     if (data.rules && data.rules.length > 0) {
-      await db.collectionRule.createMany({
+      await db.collection_rules.createMany({
         data: data.rules.map((rule, index) => ({
           id: nanoid(),
           collectionId,
@@ -188,7 +188,7 @@ export const updateCollectionServerFn = createServerFn({ method: "POST" })
     const { collectionId, rules, ...updateData } = data;
 
     // Update collection
-    await db.collection.update({
+    await db.collections.update({
       where: { id: collectionId },
       data: {
         ...updateData,
@@ -201,12 +201,12 @@ export const updateCollectionServerFn = createServerFn({ method: "POST" })
     });
 
     // Delete existing rules and recreate
-    await db.collectionRule.deleteMany({
+    await db.collection_rules.deleteMany({
       where: { collectionId },
     });
 
     if (rules && rules.length > 0) {
-      await db.collectionRule.createMany({
+      await db.collection_rules.createMany({
         data: rules.map((rule, index) => ({
           id: rule.id || nanoid(),
           collectionId,
@@ -229,7 +229,7 @@ export const deleteCollectionServerFn = createServerFn({ method: "POST" })
   .middleware([adminMiddleware])
   .inputValidator(z.object({ collectionId: z.string() }))
   .handler(async ({ data }) => {
-    await db.collection.delete({
+    await db.collections.delete({
       where: { id: data.collectionId },
     });
     return serializeData({ success: true });
@@ -241,7 +241,7 @@ export const getCollectionProductsServerFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ collectionId: z.string() }))
   .handler(async ({ data }) => {
     // Get collection
-    const collection = await db.collection.findFirst({
+    const collection = await db.collections.findFirst({
       where: { id: data.collectionId },
     });
 
@@ -279,7 +279,7 @@ export const getCollectionProductsServerFn = createServerFn({ method: "POST" })
     }
 
     // Get products with positions
-    const collectionProductsList = await db.collectionProduct.findMany({
+    const collectionProductsList = await db.collection_products.findMany({
       where: { collectionId: data.collectionId },
       include: {
         product: {
@@ -300,7 +300,7 @@ export const getCollectionProductsServerFn = createServerFn({ method: "POST" })
     // Get primary images for each product
     const productsWithImages = await Promise.all(
       collectionProductsList.map(async (cp) => {
-        const primaryMedia = await db.productMedia.findFirst({
+        const primaryMedia = await db.product_media.findFirst({
           where: {
             productId: cp.productId,
             isPrimary: true,
@@ -356,7 +356,7 @@ export const updateCollectionProductPositionsServerFn = createServerFn({ method:
     // Update each product's position
     await Promise.all(
       data.products.map((product) =>
-        db.collectionProduct.update({
+        db.collection_products.update({
           where: { id: product.id },
           data: { position: product.position, updatedAt: new Date() },
         })
@@ -364,7 +364,7 @@ export const updateCollectionProductPositionsServerFn = createServerFn({ method:
     );
 
     // Update collection sort order to manual
-    await db.collection.update({
+    await db.collections.update({
       where: { id: data.collectionId },
       data: { sortOrder: "manual", updatedAt: new Date() },
     });
@@ -383,7 +383,7 @@ export const addProductToCollectionServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     // Check if product already in collection
-    const existing = await db.collectionProduct.findFirst({
+    const existing = await db.collection_products.findFirst({
       where: {
         collectionId: data.collectionId,
         productId: data.productId,
@@ -395,13 +395,13 @@ export const addProductToCollectionServerFn = createServerFn({ method: "POST" })
     }
 
     // Get max position
-    const maxPositionResult = await db.collectionProduct.aggregate({
+    const maxPositionResult = await db.collection_products.aggregate({
       where: { collectionId: data.collectionId },
       _max: { position: true },
     });
 
     const id = nanoid();
-    await db.collectionProduct.create({
+    await db.collection_products.create({
       data: {
         id,
         collectionId: data.collectionId,
@@ -424,7 +424,7 @@ export const removeProductFromCollectionServerFn = createServerFn({ method: "POS
     })
   )
   .handler(async ({ data }) => {
-    await db.collectionProduct.deleteMany({
+    await db.collection_products.deleteMany({
       where: {
         collectionId: data.collectionId,
         productId: data.productId,
@@ -446,19 +446,19 @@ export const regenerateCollectionProductsServerFn = createServerFn({ method: "PO
 // Helper function to generate collection products based on rules
 async function generateCollectionProducts(collectionId: string) {
   // Get collection with rules
-  const collection = await db.collection.findFirst({
+  const collection = await db.collections.findFirst({
     where: { id: collectionId },
   });
 
   if (!collection) return;
 
-  const rules = await db.collectionRule.findMany({
+  const rules = await db.collection_rules.findMany({
     where: { collectionId },
     orderBy: { position: "asc" },
   });
 
   // Get manually added products to preserve them
-  const manualProducts = await db.collectionProduct.findMany({
+  const manualProducts = await db.collection_products.findMany({
     where: {
       collectionId,
       isManual: true,
@@ -469,7 +469,7 @@ async function generateCollectionProducts(collectionId: string) {
 
   // If no rules, keep only manual products
   if (rules.length === 0) {
-    await db.collectionProduct.deleteMany({
+    await db.collection_products.deleteMany({
       where: {
         collectionId,
         isManual: false,
@@ -479,7 +479,7 @@ async function generateCollectionProducts(collectionId: string) {
   }
 
   // Get all active products with tags
-  const allProducts = await db.product.findMany({
+  const allProducts = await db.products.findMany({
     where: { status: "active" },
     select: {
       id: true,
@@ -499,7 +499,7 @@ async function generateCollectionProducts(collectionId: string) {
   // Get inventory for products (need to check variants)
   const productInventory = new Map<string, number>();
   for (const product of allProducts) {
-    const variants = await db.productVariant.findMany({
+    const variants = await db.product_variants.findMany({
       where: { productId: product.id },
       select: { id: true },
     });
@@ -531,7 +531,7 @@ async function generateCollectionProducts(collectionId: string) {
   });
 
   // Delete auto-generated products (keep manual)
-  await db.collectionProduct.deleteMany({
+  await db.collection_products.deleteMany({
     where: {
       collectionId,
       isManual: false,
@@ -548,7 +548,7 @@ async function generateCollectionProducts(collectionId: string) {
   }
 
   if (newProducts.length > 0) {
-    await db.collectionProduct.createMany({
+    await db.collection_products.createMany({
       data: newProducts.map((product, index) => ({
         id: nanoid(),
         collectionId,
@@ -716,7 +716,7 @@ export async function markCollectionsForRegeneration(
   }
 
   // Find all active collections with rules that could be affected
-  const collectionsToMark = await db.collection.findMany({
+  const collectionsToMark = await db.collections.findMany({
     where: {
       active: true,
       needsRegeneration: false, // Only mark if not already marked
@@ -732,7 +732,7 @@ export async function markCollectionsForRegeneration(
   }
 
   // Mark them for regeneration
-  await db.collection.updateMany({
+  await db.collections.updateMany({
     where: {
       id: { in: collectionsToMark.map((c) => c.id) },
     },
@@ -750,7 +750,7 @@ export async function markCollectionsForRegeneration(
  * Useful when a product is created, deleted, or has many field changes.
  */
 export async function markAllRuleBasedCollectionsForRegeneration(): Promise<{ markedCount: number }> {
-  const collectionsToMark = await db.collection.findMany({
+  const collectionsToMark = await db.collections.findMany({
     where: {
       active: true,
       needsRegeneration: false,
@@ -765,7 +765,7 @@ export async function markAllRuleBasedCollectionsForRegeneration(): Promise<{ ma
     return { markedCount: 0 };
   }
 
-  await db.collection.updateMany({
+  await db.collections.updateMany({
     where: {
       id: { in: collectionsToMark.map((c) => c.id) },
     },
@@ -791,7 +791,7 @@ export async function processPendingRegenerations(
   const errors: string[] = [];
 
   // Get collections that need regeneration, ordered by when they were last regenerated
-  const collectionsToProcess = await db.collection.findMany({
+  const collectionsToProcess = await db.collections.findMany({
     where: {
       needsRegeneration: true,
       active: true,
@@ -807,7 +807,7 @@ export async function processPendingRegenerations(
       await generateCollectionProducts(collection.id);
 
       // Mark as regenerated
-      await db.collection.update({
+      await db.collections.update({
         where: { id: collection.id },
         data: {
           needsRegeneration: false,
@@ -824,7 +824,7 @@ export async function processPendingRegenerations(
   }
 
   // Count remaining collections
-  const remainingCount = await db.collection.count({
+  const remainingCount = await db.collections.count({
     where: {
       needsRegeneration: true,
       active: true,
@@ -916,6 +916,7 @@ export type PublicCollection = {
   image: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
+  sortOrder: string;
 };
 
 export type PublicCollectionProduct = {
@@ -938,7 +939,7 @@ export type PublicCollectionProduct = {
 export const getPublicCollectionBySlugServerFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ slug: z.string() }))
   .handler(async ({ data }): Promise<PublicCollection | null> => {
-    const collection = await db.collection.findFirst({
+    const collection = await db.collections.findFirst({
       where: {
         slug: data.slug,
         active: true,
@@ -951,6 +952,7 @@ export const getPublicCollectionBySlugServerFn = createServerFn({ method: "GET" 
         image: true,
         seoTitle: true,
         seoDescription: true,
+        sortOrder: true,
       },
     });
 
@@ -968,15 +970,24 @@ export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET
       collectionId: z.string(),
       cursor: z.string().optional(), // Last product ID from previous page
       limit: z.number().min(1).max(100).optional().default(24),
+      // Filter parameters
+      sortBy: z.enum(["default", "price-asc", "price-desc", "name-asc", "name-desc", "newest"]).optional(),
+      minPrice: z.number().optional(),
+      maxPrice: z.number().optional(),
+      categoryId: z.string().optional(),
+      optionFilters: z.array(z.object({
+        optionName: z.string(),
+        values: z.array(z.string()),
+      })).optional(),
     })
   )
   .handler(async ({ data }) => {
-    const { collectionId, cursor, limit = 24 } = data;
+    const { collectionId, cursor, limit = 24, sortBy, minPrice, maxPrice, categoryId, optionFilters } = data;
 
-    // Get collection to check sort order
-    const collection = await db.collection.findFirst({
+    // Get collection to check sort order and slug
+    const collection = await db.collections.findFirst({
       where: { id: collectionId, active: true },
-      select: { sortOrder: true },
+      select: { sortOrder: true, slug: true },
     });
 
     if (!collection) {
@@ -984,31 +995,36 @@ export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET
         products: [],
         nextCursor: null,
         hasMore: false,
+        collectionSlug: null,
       };
     }
 
-    // Determine order based on collection's sortOrder setting
+    // Determine order - client sortBy overrides collection sortOrder
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let orderBy: any;
+    const effectiveSort = sortBy && sortBy !== "default" ? sortBy : collection.sortOrder;
 
-    switch (collection.sortOrder) {
+    switch (effectiveSort) {
       case "price-asc":
         orderBy = { product: { price: "asc" } };
         break;
       case "price-desc":
         orderBy = { product: { price: "desc" } };
         break;
+      case "name-asc":
       case "alphabetical-asc":
         orderBy = { product: { name: "asc" } };
         break;
+      case "name-desc":
       case "alphabetical-desc":
         orderBy = { product: { name: "desc" } };
         break;
-      case "created-asc":
-        orderBy = { product: { createdAt: "asc" } };
-        break;
+      case "newest":
       case "created-desc":
         orderBy = { product: { createdAt: "desc" } };
+        break;
+      case "created-asc":
+        orderBy = { product: { createdAt: "asc" } };
         break;
       case "manual":
       default:
@@ -1016,11 +1032,40 @@ export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET
         break;
     }
 
+    // Build product filter conditions
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const productFilters: any = { status: "active" };
+
+    // Category filter
+    if (categoryId) {
+      productFilters.categoryId = categoryId;
+    }
+
+    // Price filter - need to find products with variants in price range
+    let productIdsInPriceRange: string[] | null = null;
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      // Find all variants within the price range
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const priceCondition: any = {};
+      if (minPrice !== undefined) priceCondition.gte = minPrice;
+      if (maxPrice !== undefined) priceCondition.lte = maxPrice;
+
+      const variantsInRange = await db.product_variants.findMany({
+        where: {
+          price: priceCondition,
+        },
+        select: { productId: true },
+        distinct: ["productId"],
+      });
+
+      productIdsInPriceRange = variantsInRange.map(v => v.productId);
+    }
+
     // Build cursor condition if provided
     let cursorCondition = {};
     if (cursor) {
       // Find the cursor item's position to know where to start
-      const cursorItem = await db.collectionProduct.findFirst({
+      const cursorItem = await db.collection_products.findFirst({
         where: {
           collectionId,
           productId: cursor,
@@ -1035,11 +1080,61 @@ export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET
       }
     }
 
+    // Handle option filters - need to find products with matching variant options
+    let productIdsWithMatchingOptions: string[] | null = null;
+    if (optionFilters && optionFilters.length > 0) {
+      // For each option filter, find products that have variants matching ALL the specified option values
+      const matchingSets: Set<string>[] = [];
+
+      for (const filter of optionFilters) {
+        // Find all products with variants that have any of the selected values for this option
+        const variantsWithOption = await db.product_variant_options.findMany({
+          where: {
+            option: { name: filter.optionName },
+            optionValue: { name: { in: filter.values } },
+          },
+          include: {
+            variant: { select: { productId: true } },
+          },
+        });
+
+        const productIds = new Set(variantsWithOption.map(vo => vo.variant.productId));
+        matchingSets.push(productIds);
+      }
+
+      // Intersect all sets - product must match all option filters
+      if (matchingSets.length > 0) {
+        productIdsWithMatchingOptions = Array.from(
+          matchingSets.reduce((acc, set) => {
+            return new Set([...acc].filter(id => set.has(id)));
+          })
+        );
+      }
+    }
+
+    // Build final product filter - combine all ID filters
+    let productIdFilter: string[] | null = null;
+
+    // Combine price filter and option filter product IDs
+    if (productIdsInPriceRange !== null && productIdsWithMatchingOptions !== null) {
+      // Intersect both filters
+      const priceSet = new Set(productIdsInPriceRange);
+      productIdFilter = productIdsWithMatchingOptions.filter(id => priceSet.has(id));
+    } else if (productIdsInPriceRange !== null) {
+      productIdFilter = productIdsInPriceRange;
+    } else if (productIdsWithMatchingOptions !== null) {
+      productIdFilter = productIdsWithMatchingOptions;
+    }
+
+    const finalProductFilter = productIdFilter
+      ? { ...productFilters, id: { in: productIdFilter } }
+      : productFilters;
+
     // Get products with positions - fetch one extra to check if there's more
-    const collectionProductsList = await db.collectionProduct.findMany({
+    const collectionProductsList = await db.collection_products.findMany({
       where: {
         collectionId,
-        product: { status: "active" },
+        product: finalProductFilter,
         ...cursorCondition,
       },
       include: {
@@ -1067,7 +1162,7 @@ export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET
     const productsWithDetails = await Promise.all(
       itemsToReturn.map(async (cp) => {
         // Get primary image
-        const primaryMedia = await db.productMedia.findFirst({
+        const primaryMedia = await db.product_media.findFirst({
           where: {
             productId: cp.productId,
             isPrimary: true,
@@ -1080,7 +1175,7 @@ export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET
         });
 
         // Get variants with options and inventory
-        const variants = await db.productVariant.findMany({
+        const variants = await db.product_variants.findMany({
           where: { productId: cp.productId },
           orderBy: { position: "asc" },
           include: {
@@ -1091,7 +1186,7 @@ export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET
 
         const variantsWithOptions = await Promise.all(
           variants.map(async (v) => {
-            const variantOptions = await db.productVariantOption.findMany({
+            const variantOptions = await db.product_variant_options.findMany({
               where: { variantId: v.id },
               include: {
                 option: true,
@@ -1148,6 +1243,132 @@ export const getPublicCollectionProductsServerFn = createServerFn({ method: "GET
       products: productsWithDetails,
       nextCursor,
       hasMore,
+      collectionSlug: collection.slug,
+    };
+  });
+
+// Get filter metadata for a collection (price range, categories, options)
+export const getCollectionFilterMetaServerFn = createServerFn({ method: "GET" })
+  .inputValidator(
+    z.object({
+      collectionId: z.string(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { collectionId } = data;
+
+    // Get all active products in this collection with their details
+    const collectionProducts = await db.collection_products.findMany({
+      where: {
+        collectionId,
+        product: { status: "active" },
+      },
+      include: {
+        product: {
+          select: {
+            id: true,
+            price: true,
+            categoryId: true,
+            category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            variants: {
+              select: {
+                id: true,
+                price: true,
+                variantOptions: {
+                  include: {
+                    option: { select: { name: true } },
+                    optionValue: { select: { name: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Calculate price range
+    let minPrice = Infinity;
+    let maxPrice = 0;
+
+    // Track categories
+    const categoryMap = new Map<string, { id: string; name: string; count: number }>();
+
+    // Track options (e.g., Size, Color)
+    const optionsMap = new Map<string, Map<string, number>>();
+
+    for (const cp of collectionProducts) {
+      const product = cp.product;
+
+      // Price range - check product price and variant prices
+      const productPrice = Number(product.price);
+      if (productPrice < minPrice) minPrice = productPrice;
+      if (productPrice > maxPrice) maxPrice = productPrice;
+
+      for (const variant of product.variants) {
+        if (variant.price) {
+          const variantPrice = Number(variant.price);
+          if (variantPrice < minPrice) minPrice = variantPrice;
+          if (variantPrice > maxPrice) maxPrice = variantPrice;
+        }
+      }
+
+      // Categories
+      if (product.category) {
+        const existing = categoryMap.get(product.category.id);
+        if (existing) {
+          existing.count++;
+        } else {
+          categoryMap.set(product.category.id, {
+            id: product.category.id,
+            name: product.category.name,
+            count: 1,
+          });
+        }
+      }
+
+      // Options from variants
+      for (const variant of product.variants) {
+        for (const vo of variant.variantOptions) {
+          const optionName = vo.option?.name;
+          const optionValue = vo.optionValue?.name;
+
+          if (optionName && optionValue) {
+            if (!optionsMap.has(optionName)) {
+              optionsMap.set(optionName, new Map());
+            }
+            const valuesMap = optionsMap.get(optionName)!;
+            valuesMap.set(optionValue, (valuesMap.get(optionValue) || 0) + 1);
+          }
+        }
+      }
+    }
+
+    // Convert maps to arrays
+    const categories = Array.from(categoryMap.values()).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+
+    const options = Array.from(optionsMap.entries()).map(([name, valuesMap]) => ({
+      name,
+      values: Array.from(valuesMap.entries())
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => a.value.localeCompare(b.value)),
+    }));
+
+    return {
+      priceRange: {
+        min: minPrice === Infinity ? 0 : Math.floor(minPrice),
+        max: maxPrice === 0 ? 1000 : Math.ceil(maxPrice),
+      },
+      categories,
+      options,
+      totalProducts: collectionProducts.length,
     };
   });
 

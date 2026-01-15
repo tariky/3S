@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@plugin '@tailwindcss/typography';
 
 @import 'tw-animate-css';
 
@@ -190,4 +191,175 @@ code {
 
 .animate-success-pop {
   animation: success-pop 0.3s ease-out forwards;
+}
+
+/* Fly to cart animations */
+@keyframes flyRotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-10deg);
+  }
+  75% {
+    transform: rotate(10deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes cartBounce {
+  0%, 100% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.3);
+  }
+  50% {
+    transform: scale(0.9);
+  }
+  75% {
+    transform: scale(1.1);
+  }
+}
+
+.animate-cart-bounce {
+  animation: cartBounce 0.4s ease-out;
+}
+
+@keyframes flyPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px 10px rgba(0, 0, 0, 0.1);
+  }
+}
+
+@keyframes flyingHalo {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+.animate-flying-halo {
+  animation: flyingHalo 0.3s ease-in-out infinite;
+}
+
+/* Checkout button glow animation */
+@keyframes checkout-glow {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes border-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-checkout-glow {
+  animation: checkout-glow 2s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: border-spin 3s linear infinite;
+}
+
+/* Rainbow border animation for checkout button */
+@keyframes rainbow-move {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.rainbow-border-wrapper {
+  position: relative;
+  padding: 2px;
+  border-radius: 0.625rem;
+  background: linear-gradient(
+    90deg,
+    #ff0000,
+    #ff8000,
+    #ffff00,
+    #00ff00,
+    #00ffff,
+    #0080ff,
+    #8000ff,
+    #ff00ff,
+    #ff0000
+  );
+  background-size: 200% 200%;
+  animation: rainbow-move 3s ease infinite;
+}
+
+.rainbow-border-wrapper > * {
+  position: relative;
+  border-radius: calc(0.625rem - 2px);
+}
+
+/* React International Phone - Dark Mode Support */
+.react-international-phone-input-container {
+  --react-international-phone-background-color: transparent;
+  --react-international-phone-text-color: var(--foreground);
+  --react-international-phone-border-color: var(--input);
+  --react-international-phone-selected-dropdown-item-background-color: var(--accent);
+  --react-international-phone-country-selector-background-color-hover: var(--accent);
+}
+
+.react-international-phone-input {
+  color: var(--foreground) !important;
+  background-color: transparent !important;
+}
+
+.react-international-phone-country-selector-button {
+  background-color: transparent !important;
+}
+
+.react-international-phone-country-selector-dropdown {
+  background-color: var(--background) !important;
+  border-color: var(--input) !important;
+  color: var(--foreground) !important;
+}
+
+.react-international-phone-country-selector-dropdown__list-item {
+  color: var(--foreground) !important;
+  background-color: transparent !important;
+}
+
+.react-international-phone-country-selector-dropdown__list-item:hover {
+  background-color: var(--accent) !important;
+}
+
+.react-international-phone-country-selector-dropdown__list-item--selected {
+  background-color: var(--accent) !important;
+}
+
+.react-international-phone-country-selector-dropdown__list-item-country-name {
+  color: var(--foreground) !important;
+}
+
+.react-international-phone-country-selector-dropdown__list-item-dial-code {
+  color: var(--muted-foreground) !important;
 }

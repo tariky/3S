@@ -33,7 +33,7 @@ export const initTypesenseCollectionServerFn = createServerFn({ method: "POST" }
 
 // Transform a product from database to Typesense document
 async function transformProductToTypesense(productId: string): Promise<TypesenseProduct | null> {
-  const product = await db.product.findUnique({
+  const product = await db.products.findUnique({
     where: { id: productId },
     include: {
       category: true,
@@ -43,7 +43,7 @@ async function transformProductToTypesense(productId: string): Promise<Typesense
           tag: true,
         },
       },
-      collectionProducts: {
+      collections: {
         include: {
           collection: true,
         },
@@ -111,7 +111,7 @@ async function transformProductToTypesense(productId: string): Promise<Typesense
   // If no variants, use product-level inventory
   if (product.variants.length === 0) {
     // Check if there's a default variant
-    const defaultVariant = await db.productVariant.findFirst({
+    const defaultVariant = await db.product_variants.findFirst({
       where: { productId: product.id, isDefault: true },
       include: { inventory: true },
     });
@@ -138,7 +138,7 @@ async function transformProductToTypesense(productId: string): Promise<Typesense
     vendorName: product.vendor?.name || null,
     tagIds: product.tags.map((t) => t.tagId),
     tagNames: product.tags.map((t) => t.tag.name),
-    collectionIds: product.collectionProducts.map((c) => c.collectionId),
+    collectionIds: product.collections.map((c) => c.collectionId),
     featured: product.featured,
     totalInventory,
     inStock: totalInventory > 0,
@@ -159,7 +159,7 @@ export const syncAllProductsToTypesenseServerFn = createServerFn({ method: "POST
     }
 
     // Get all active products
-    const products = await db.product.findMany({
+    const products = await db.products.findMany({
       where: { status: "active" },
       select: { id: true },
     });
@@ -243,7 +243,7 @@ export const syncProductToTypesenseServerFn = createServerFn({ method: "POST" })
     }
 
     try {
-      const product = await db.product.findUnique({
+      const product = await db.products.findUnique({
         where: { id: data.productId },
         select: { status: true },
       });
@@ -483,7 +483,7 @@ export const fullTypesenseSyncServerFn = createServerFn({ method: "POST" })
     await typesenseClient.collections().create(productsSchema);
 
     // Step 2: Get all active products
-    const products = await db.product.findMany({
+    const products = await db.products.findMany({
       where: { status: "active" },
       select: { id: true },
     });

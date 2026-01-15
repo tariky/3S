@@ -21,15 +21,15 @@ async function upsertSetting(
   type: string,
   group: string
 ): Promise<void> {
-  const existing = await db.setting.findFirst({ where: { key } });
+  const existing = await db.settings.findFirst({ where: { key } });
 
   if (existing) {
-    await db.setting.update({
+    await db.settings.update({
       where: { id: existing.id },
       data: { value, updatedAt: new Date() },
     });
   } else {
-    await db.setting.create({
+    await db.settings.create({
       data: {
         id: nanoid(),
         key,
@@ -45,15 +45,15 @@ async function upsertSetting(
 export const getSkuGeneratorSettingsServerFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({}).optional())
   .handler(async () => {
-    const skuPrefix = await db.setting.findFirst({
+    const skuPrefix = await db.settings.findFirst({
       where: { key: "sku_prefix" },
     });
 
-    const skuDigits = await db.setting.findFirst({
+    const skuDigits = await db.settings.findFirst({
       where: { key: "sku_digits" },
     });
 
-    const skuCounter = await db.setting.findFirst({
+    const skuCounter = await db.settings.findFirst({
       where: { key: "sku_counter" },
     });
 
@@ -76,12 +76,12 @@ export const updateSkuGeneratorSettingsServerFn = createServerFn({
   )
   .handler(async ({ data }) => {
     // Update or create sku_prefix
-    const existingPrefix = await db.setting.findFirst({
+    const existingPrefix = await db.settings.findFirst({
       where: { key: "sku_prefix" },
     });
 
     if (existingPrefix) {
-      await db.setting.update({
+      await db.settings.update({
         where: { id: existingPrefix.id },
         data: {
           value: data.prefix,
@@ -89,7 +89,7 @@ export const updateSkuGeneratorSettingsServerFn = createServerFn({
         },
       });
     } else {
-      await db.setting.create({
+      await db.settings.create({
         data: {
           id: nanoid(),
           key: "sku_prefix",
@@ -101,12 +101,12 @@ export const updateSkuGeneratorSettingsServerFn = createServerFn({
     }
 
     // Update or create sku_digits
-    const existingDigits = await db.setting.findFirst({
+    const existingDigits = await db.settings.findFirst({
       where: { key: "sku_digits" },
     });
 
     if (existingDigits) {
-      await db.setting.update({
+      await db.settings.update({
         where: { id: existingDigits.id },
         data: {
           value: String(data.digits),
@@ -114,7 +114,7 @@ export const updateSkuGeneratorSettingsServerFn = createServerFn({
         },
       });
     } else {
-      await db.setting.create({
+      await db.settings.create({
         data: {
           id: nanoid(),
           key: "sku_digits",
@@ -135,7 +135,7 @@ export const getNextSkuNumberServerFn = createServerFn({ method: "POST" })
     const skuSettings = await getSkuGeneratorSettingsServerFn();
 
     // Get current counter
-    const skuCounter = await db.setting.findFirst({
+    const skuCounter = await db.settings.findFirst({
       where: { key: "sku_counter" },
     });
 
@@ -146,7 +146,7 @@ export const getNextSkuNumberServerFn = createServerFn({ method: "POST" })
 
     // Update counter
     if (skuCounter) {
-      await db.setting.update({
+      await db.settings.update({
         where: { id: skuCounter.id },
         data: {
           value: String(nextCounter),
@@ -154,7 +154,7 @@ export const getNextSkuNumberServerFn = createServerFn({ method: "POST" })
         },
       });
     } else {
-      await db.setting.create({
+      await db.settings.create({
         data: {
           id: nanoid(),
           key: "sku_counter",
@@ -180,6 +180,7 @@ const shopSettingsSchema = z.object({
   shopDescription: z.string().max(1000).optional().default(""),
   shopLogo: z.string().optional().default(""),
   shopLogoWidth: z.number().min(20).max(500).optional().default(120),
+  shopLogoSvgContent: z.string().nullable().optional(),
   shopFavicon: z.string().optional().default(""),
   seoHomeTitle: z.string().max(70).optional().default(""),
   seoHomeDescription: z.string().max(160).optional().default(""),
@@ -192,6 +193,14 @@ const shopSettingsSchema = z.object({
   // Product page info
   productShippingInfo: z.string().max(2000).optional().default(""),
   productPaymentInfo: z.string().max(2000).optional().default(""),
+  // Local pickup location
+  pickupLocationUrl: z.string().optional().default(""),
+  pickupLocationAddress: z.string().max(500).optional().default(""),
+  // Email settings
+  emailLogo: z.string().optional().default(""),
+  emailLogoWidth: z.number().min(50).max(400).optional().default(150),
+  emailButtonBgColor: z.string().optional().default("#2563eb"),
+  emailButtonTextColor: z.string().optional().default("#ffffff"),
 });
 
 export type ShopSettings = z.infer<typeof shopSettingsSchema>;
@@ -200,8 +209,8 @@ export type ShopSettings = z.infer<typeof shopSettingsSchema>;
 export const getShopSettingsServerFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({}).optional())
   .handler(async () => {
-    const settings = await db.setting.findMany({
-      where: { group: { in: ["shop", "seo", "alert", "product"] } },
+    const settings = await db.settings.findMany({
+      where: { group: { in: ["shop", "seo", "alert", "product", "pickup", "email"] } },
     });
 
     const logoWidthStr = findSettingValue(settings, "shop_logo_width");
@@ -221,6 +230,12 @@ export const getShopSettingsServerFn = createServerFn({ method: "POST" })
       alertTextColor: findSettingValue(settings, "alert_text_color") || "text-white",
       productShippingInfo: findSettingValue(settings, "product_shipping_info") || "",
       productPaymentInfo: findSettingValue(settings, "product_payment_info") || "",
+      pickupLocationUrl: findSettingValue(settings, "pickup_location_url") || "",
+      pickupLocationAddress: findSettingValue(settings, "pickup_location_address") || "",
+      emailLogo: findSettingValue(settings, "email_logo") || "",
+      emailLogoWidth: parseInt(findSettingValue(settings, "email_logo_width") || "150", 10),
+      emailButtonBgColor: findSettingValue(settings, "email_button_bg_color") || "#2563eb",
+      emailButtonTextColor: findSettingValue(settings, "email_button_text_color") || "#ffffff",
     };
   });
 
@@ -251,6 +266,16 @@ export const updateShopSettingsServerFn = createServerFn({ method: "POST" })
     await upsertSetting("product_shipping_info", data.productShippingInfo, "text", "product");
     await upsertSetting("product_payment_info", data.productPaymentInfo, "text", "product");
 
+    // Pickup location settings
+    await upsertSetting("pickup_location_url", data.pickupLocationUrl, "string", "pickup");
+    await upsertSetting("pickup_location_address", data.pickupLocationAddress, "string", "pickup");
+
+    // Email settings
+    await upsertSetting("email_logo", data.emailLogo, "string", "email");
+    await upsertSetting("email_logo_width", String(data.emailLogoWidth), "number", "email");
+    await upsertSetting("email_button_bg_color", data.emailButtonBgColor, "string", "email");
+    await upsertSetting("email_button_text_color", data.emailButtonTextColor, "string", "email");
+
     return { success: true };
   });
 
@@ -258,20 +283,46 @@ export const updateShopSettingsServerFn = createServerFn({ method: "POST" })
 // PUBLIC SHOP SETTINGS (no auth required - for storefront)
 // ============================================================================
 
+// Helper to fetch SVG content
+async function fetchSvgContent(url: string): Promise<string | null> {
+  if (!url || !url.toLowerCase().endsWith(".svg")) {
+    return null;
+  }
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return null;
+    }
+    const text = await response.text();
+    if (text.includes("<svg") || text.includes("<?xml")) {
+      return text;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // Get public shop settings for storefront display
 export const getPublicShopSettingsServerFn = createServerFn({ method: "GET" })
   .handler(async () => {
-    const settings = await db.setting.findMany({
+    const settings = await db.settings.findMany({
       where: { group: { in: ["shop", "seo", "alert", "product"] } },
     });
 
     const logoWidthStr = findSettingValue(settings, "shop_logo_width");
+    const shopLogo = findSettingValue(settings, "shop_logo") || "";
+
+    // Pre-fetch SVG content for logo if it's an SVG
+    const shopLogoSvgContent = await fetchSvgContent(shopLogo);
+
     return {
       // Branding
       shopTitle: findSettingValue(settings, "shop_title") || "Shop",
       shopDescription: findSettingValue(settings, "shop_description") || "",
-      shopLogo: findSettingValue(settings, "shop_logo") || "",
+      shopLogo,
       shopLogoWidth: logoWidthStr ? parseInt(logoWidthStr, 10) : 120,
+      shopLogoSvgContent,
       shopFavicon: findSettingValue(settings, "shop_favicon") || "",
       // SEO
       seoHomeTitle: findSettingValue(settings, "seo_home_title") || "",

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Package, Calendar, DollarSign } from "lucide-react";
 import { useState } from "react";
 
-export const Route = createFileRoute("/account/orders")({
+export const Route = createFileRoute("/account/orders/")({
 	component: OrdersPage,
 	loader: async ({ context }) => {
 		const [settings, navigationItems] = await Promise.all([
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/account/orders")({
 					limit: 10,
 				})
 			),
-		]);
+		])
 		return { settings, navigationItems };
 	},
 });
@@ -36,7 +36,7 @@ function OrdersPage() {
 			page,
 			limit: LIMIT,
 		})
-	);
+	)
 
 	const getStatusBadge = (status: string) => {
 		const statusMap: Record<string, { label: string; className: string }> = {
@@ -45,12 +45,12 @@ function OrdersPage() {
 			fulfilled: { label: "Isporučeno", className: "bg-green-100 text-green-800" },
 			cancelled: { label: "Otkazano", className: "bg-red-100 text-red-800" },
 			refunded: { label: "Refundirano", className: "bg-gray-100 text-gray-800" },
-		};
+		}
 
 		const statusInfo = statusMap[status] || {
 			label: status,
 			className: "bg-gray-100 text-gray-800",
-		};
+		}
 
 		return (
 			<span
@@ -58,16 +58,16 @@ function OrdersPage() {
 			>
 				{statusInfo.label}
 			</span>
-		);
-	};
+		)
+	}
 
 	const formatDate = (date: string | Date) => {
 		return new Date(date).toLocaleDateString("bs-BA", {
 			year: "numeric",
 			month: "long",
 			day: "numeric",
-		});
-	};
+		})
+	}
 
 	return (
 		<ShopLayout settings={settings} navigationItems={navigationItems}>
@@ -166,6 +166,6 @@ function OrdersPage() {
 				</div>
 			</main>
 		</ShopLayout>
-	);
+	)
 }
 

@@ -1,0 +1,3 @@
+- Always use bun for running commands
+- Make sure to create secure apps
+- Never put multiple components of React in one file split it

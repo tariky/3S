@@ -75,11 +75,25 @@ export const columns: ColumnDef<PaymentMethod>[] = [
     accessorKey: "description",
     header: "Opis",
     cell: ({ row }) => (
-      <div className="max-w-[300px] truncate">
+      <div className="max-w-[200px] truncate">
         {row.getValue("description") || "-"}
       </div>
     ),
-    size: 400,
+    size: 250,
+  },
+  {
+    accessorKey: "type",
+    header: "Tip",
+    cell: ({ row }) => {
+      const type = row.getValue("type") as string;
+      const labels: Record<string, string> = {
+        cod: "Pouzeće",
+        card: "Kartica",
+        bank_transfer: "Bankovna transakcija",
+      };
+      return <div>{labels[type] || type || "-"}</div>;
+    },
+    size: 150,
   },
   {
     accessorKey: "active",
@@ -105,6 +119,7 @@ export const columns: ColumnDef<PaymentMethod>[] = [
             defaultValues={{
               name: row.original.name,
               description: row.original.description || "",
+              type: row.original.type || "cod",
               active: row.original.active,
             }}
           />

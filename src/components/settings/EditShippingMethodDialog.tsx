@@ -26,6 +26,7 @@ interface EditShippingMethodDialogProps {
     description: string;
     price: number;
     isFreeShipping: boolean;
+    isLocalPickup: boolean;
     minimumOrderAmount: number | null;
     active: boolean;
   };
@@ -43,6 +44,7 @@ export function EditShippingMethodDialog({
       description: defaultValues.description,
       price: defaultValues.price,
       isFreeShipping: defaultValues.isFreeShipping,
+      isLocalPickup: defaultValues.isLocalPickup,
       minimumOrderAmount: defaultValues.minimumOrderAmount,
       active: defaultValues.active,
     },
@@ -54,6 +56,7 @@ export function EditShippingMethodDialog({
           description: value.description || null,
           price: value.price,
           isFreeShipping: value.isFreeShipping,
+          isLocalPickup: value.isLocalPickup,
           minimumOrderAmount: value.isFreeShipping ? value.minimumOrderAmount : null,
           active: value.active,
         },
@@ -128,6 +131,20 @@ export function EditShippingMethodDialog({
                     }}
                   />
                   <Label htmlFor="isFreeShipping">Besplatna dostava</Label>
+                </>
+              )}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <form.Field
+              name="isLocalPickup"
+              children={(field) => (
+                <>
+                  <Switch
+                    checked={field.state.value}
+                    onCheckedChange={field.handleChange}
+                  />
+                  <Label htmlFor="isLocalPickup">Osobno preuzimanje</Label>
                 </>
               )}
             />

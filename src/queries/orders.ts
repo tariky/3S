@@ -6,19 +6,26 @@ import { nanoid } from "nanoid";
 import { authMiddleware } from "@/utils/auth-middleware";
 import { markCollectionsForRegeneration } from "@/queries/collections";
 import { isGorseConfigured, upsertItem } from "@/lib/gorse";
+import {
+	sendOrderConfirmationEmail,
+	sendOrderFulfilledEmail,
+	sendOrderCancelledEmail,
+} from "@/server/email.server";
+import { markCheckoutRecoveredServerFn } from "@/queries/abandoned-checkouts";
+import { Prisma } from "@prisma/client";
 
 // Helper to sync product to Gorse after inventory changes
 async function syncProductToGorseAfterInventoryChange(productId: string) {
   if (!isGorseConfigured()) return;
 
   try {
-    const product = await db.product.findUnique({
+    const product = await db.products.findUnique({
       where: { id: productId },
       include: {
         category: true,
         vendor: true,
         tags: { include: { tag: true } },
-        collectionProducts: { include: { collection: true } },
+        collections: { include: { collection: true } },
         variants: { include: { inventory: true } },
       },
     });
@@ -34,7 +41,7 @@ async function syncProductToGorseAfterInventoryChange(productId: string) {
     // Build categories array
     const categories: string[] = [];
     if (product.category?.slug) categories.push(product.category.slug);
-    product.collectionProducts.forEach((cp) => {
+    product.collections.forEach((cp) => {
       if (cp.collection?.slug) categories.push(cp.collection.slug);
     });
 
@@ -83,7 +90,7 @@ async function getOrCreateCustomerByEmail(
   const normalizedEmail = email.toLowerCase().trim();
 
   // Check if customer already exists
-  const existingCustomer = await db.customer.findFirst({
+  const existingCustomer = await db.customers.findFirst({
     where: { email: normalizedEmail },
   });
 
@@ -110,7 +117,7 @@ async function getOrCreateCustomerByEmail(
 
     // Only update if we have new data
     if (Object.keys(updates).length > 1) {
-      await db.customer.update({
+      await db.customers.update({
         where: { id: existingCustomer.id },
         data: updates,
       });
@@ -121,7 +128,128 @@ async function getOrCreateCustomerByEmail(
 
   // Create new customer
   const customerId = nanoid();
-  await db.customer.create({
+  await db.customers.create({
+    data: {
+      id: customerId,
+      email: normalizedEmail,
+      firstName: shippingAddress?.firstName || null,
+      lastName: shippingAddress?.lastName || null,
+      phone: shippingAddress?.phone || null,
+      hasEmail: true,
+      acceptsMarketing: false,
+      totalSpent: "0",
+      ordersCount: 0,
+      status: "active",
+    },
+  });
+
+  return customerId;
+}
+
+// Type for Prisma transaction client
+type TransactionClient = Prisma.TransactionClient;
+
+// Helper to get inventory with row-level lock (prevents concurrent modifications)
+// Type for raw inventory query result (snake_case from MySQL)
+interface RawInventory {
+  id: string;
+  variant_id: string;
+  available: number;
+  reserved: number;
+  on_hand: number;
+  committed: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// Mapped inventory type for use in code (camelCase)
+interface MappedInventory {
+  id: string;
+  variantId: string;
+  available: number;
+  reserved: number;
+  onHand: number;
+  committed: number;
+}
+
+async function getInventoryWithLock(
+  tx: TransactionClient,
+  variantId: string
+): Promise<MappedInventory | null> {
+  // Use raw query for SELECT ... FOR UPDATE
+  // This locks the row until transaction commits/rollbacks
+  const result = await tx.$queryRaw<RawInventory[]>`
+    SELECT * FROM inventory
+    WHERE variant_id = ${variantId}
+    FOR UPDATE
+  `;
+
+  const raw = result[0];
+  if (!raw) return null;
+
+  // Map snake_case to camelCase
+  return {
+    id: raw.id,
+    variantId: raw.variant_id,
+    available: raw.available,
+    reserved: raw.reserved,
+    onHand: raw.on_hand,
+    committed: raw.committed,
+  };
+}
+
+// Transaction-aware version of getOrCreateCustomerByEmail
+async function getOrCreateCustomerByEmailTx(
+  tx: TransactionClient,
+  email: string | null | undefined,
+  shippingAddress?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    phone?: string | null;
+  }
+): Promise<string | null> {
+  if (!email) {
+    return null;
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const existingCustomer = await tx.customers.findFirst({
+    where: { email: normalizedEmail },
+  });
+
+  if (existingCustomer) {
+    const updates: {
+      firstName?: string | null;
+      lastName?: string | null;
+      phone?: string | null;
+      updatedAt: Date;
+    } = {
+      updatedAt: new Date(),
+    };
+
+    if (shippingAddress?.firstName && !existingCustomer.firstName) {
+      updates.firstName = shippingAddress.firstName;
+    }
+    if (shippingAddress?.lastName && !existingCustomer.lastName) {
+      updates.lastName = shippingAddress.lastName;
+    }
+    if (shippingAddress?.phone && !existingCustomer.phone) {
+      updates.phone = shippingAddress.phone;
+    }
+
+    if (Object.keys(updates).length > 1) {
+      await tx.customers.update({
+        where: { id: existingCustomer.id },
+        data: updates,
+      });
+    }
+
+    return existingCustomer.id;
+  }
+
+  const customerId = nanoid();
+  await tx.customers.create({
     data: {
       id: customerId,
       email: normalizedEmail,
@@ -198,201 +326,273 @@ export const createOrderServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const orderId = nanoid();
+    // Use interactive transaction with row-level locks to prevent race conditions
+    // This ensures atomic order creation - either everything succeeds or nothing does
+    const result = await db.$transaction(async (tx) => {
+      const orderId = nanoid();
+      const orderNumber = `ORD-${Date.now()}`;
+      const affectedProductIds: string[] = [];
 
-    // Generate order number (simple incrementing number for now)
-    const orderNumber = `ORD-${Date.now()}`;
+      // 1. FIRST: Lock and validate ALL inventory before making any changes
+      // This prevents race conditions where two orders try to buy the same last item
+      const inventoryChecks: Map<string, {
+        inventory: MappedInventory;
+        quantity: number;
+        title: string;
+        productId: string | null;
+      }> = new Map();
 
-    // Find or create customer by email if email is provided
-    let finalCustomerId = data.customerId || null;
-    if (!finalCustomerId && data.email) {
-      finalCustomerId = await getOrCreateCustomerByEmail(
-        data.email,
-        data.shippingAddress
-      );
-    }
-
-    // Create order
-    await db.order.create({
-      data: {
-        id: orderId,
-        orderNumber,
-        customerId: finalCustomerId,
-        email: data.email || null,
-        status: "pending",
-        financialStatus: "pending",
-        fulfillmentStatus: "unfulfilled",
-        subtotal: data.subtotal.toString(),
-        tax: (data.tax || 0).toString(),
-        shipping: (data.shipping || 0).toString(),
-        discount: (data.discount || 0).toString(),
-        total: data.total.toString(),
-        discountId: data.discountId || null,
-        discountCode: data.discountCode || null,
-        note: data.note || null,
-      },
-    });
-
-    // Update customer stats (ordersCount and totalSpent) when order is created
-    if (finalCustomerId) {
-      const orderTotal = data.total;
-
-      // Get current customer data
-      const currentCustomer = await db.customer.findFirst({
-        where: { id: finalCustomerId },
-      });
-
-      if (currentCustomer) {
-        const currentOrdersCount = currentCustomer.ordersCount || 0;
-        const currentTotalSpent = parseFloat(currentCustomer.totalSpent || "0");
-
-        // Increment orders count and add to total spent
-        await db.customer.update({
-          where: { id: finalCustomerId },
-          data: {
-            ordersCount: currentOrdersCount + 1,
-            totalSpent: (currentTotalSpent + orderTotal).toFixed(2),
-            updatedAt: new Date(),
-          },
-        });
-      }
-    }
-
-    // Create order items and reserve inventory
-    const affectedProductIds: string[] = [];
-    if (data.items.length > 0) {
-      const itemsToInsert = data.items.map((item) => ({
-        id: nanoid(),
-        orderId,
-        productId: item.productId || null,
-        variantId: item.variantId || null,
-        title: item.title,
-        sku: item.sku || null,
-        quantity: item.quantity,
-        price: item.price.toString(),
-        total: (item.price * item.quantity).toString(),
-        variantTitle: item.variantTitle || null,
-      }));
-      await db.orderItem.createMany({ data: itemsToInsert });
-
-      // Reserve inventory for items with variants
       for (const item of data.items) {
         if (item.variantId) {
-          // Get current inventory
-          const currentInventory = await db.inventory.findFirst({
-            where: { variantId: item.variantId },
-          });
+          // Lock the row with FOR UPDATE - blocks other transactions from reading/modifying
+          const lockedInventory = await getInventoryWithLock(tx, item.variantId);
 
-          if (currentInventory) {
-            // Check if we have enough available inventory
-            const available = currentInventory.onHand - currentInventory.reserved - currentInventory.committed;
-            if (available < item.quantity) {
+          if (!lockedInventory) {
+            throw new Error(`Proizvod "${item.title}" nije dostupan.`);
+          }
+
+          // Calculate available using same formula as before
+          const available = lockedInventory.onHand - lockedInventory.reserved - lockedInventory.committed;
+
+          if (available < item.quantity) {
+            if (available <= 0) {
+              throw new Error(`Proizvod "${item.title}" više nije dostupan.`);
+            } else {
               throw new Error(
-                `Insufficient inventory for ${item.title}. Available: ${available}, Required: ${item.quantity}`
+                `Proizvod "${item.title}" ima samo ${available} kom. na zalihi.`
               );
             }
-
-            // Calculate new values
-            const newReserved = currentInventory.reserved + item.quantity;
-            const newCommitted = currentInventory.committed + item.quantity;
-            const newAvailable = currentInventory.onHand - newReserved - newCommitted;
-
-            // Update inventory
-            await db.inventory.update({
-              where: { variantId: item.variantId },
-              data: {
-                reserved: newReserved,
-                committed: newCommitted,
-                available: newAvailable,
-                updatedAt: new Date(),
-              },
-            });
-
-            // Create inventory tracking record
-            await db.inventoryTracking.create({
-              data: {
-                id: nanoid(),
-                variantId: item.variantId,
-                productId: item.productId || "",
-                type: "reservation",
-                quantity: item.quantity, // Positive because we're reserving
-                previousAvailable: currentInventory.available,
-                previousReserved: currentInventory.reserved,
-                newAvailable: newAvailable,
-                newReserved: newReserved,
-                reason: `Order created: ${orderNumber}`,
-                referenceType: "order",
-                referenceId: orderId,
-                userId: null, // You can add user tracking later
-              },
-            });
-
-            // Track affected product for Gorse sync
-            if (item.productId) {
-              affectedProductIds.push(item.productId);
-            }
           }
+
+          inventoryChecks.set(item.variantId, {
+            inventory: lockedInventory,
+            quantity: item.quantity,
+            title: item.title,
+            productId: item.productId || null,
+          });
         }
       }
 
-      // Mark collections with inventory rules for regeneration
-      await markCollectionsForRegeneration(["inventory"], "product");
+      // 2. Find or create customer (inside transaction)
+      let finalCustomerId = data.customerId || null;
+      if (!finalCustomerId && data.email) {
+        finalCustomerId = await getOrCreateCustomerByEmailTx(
+          tx,
+          data.email,
+          data.shippingAddress
+        );
+      }
 
-      // Sync affected products to Gorse (in case they went out of stock)
-      await syncProductsToGorse(affectedProductIds);
-    }
+      // 3. Fetch shipping method details
+      let shippingMethodTitle: string | null = null;
+      let isLocalPickup = false;
+      if (data.shippingMethodId) {
+        const shippingMethod = await tx.shipping_methods.findUnique({
+          where: { id: data.shippingMethodId },
+        });
+        if (shippingMethod) {
+          shippingMethodTitle = shippingMethod.name;
+          isLocalPickup = shippingMethod.isLocalPickup;
+        }
+      }
 
-    // Create addresses if provided
-    if (data.billingAddress) {
-      await db.address.create({
+      // 4. Fetch payment method details
+      let paymentMethodTitle: string | null = null;
+      let paymentMethodType: string | null = null;
+      if (data.paymentMethodId) {
+        const paymentMethod = await tx.payment_methods.findUnique({
+          where: { id: data.paymentMethodId },
+        });
+        if (paymentMethod) {
+          paymentMethodTitle = paymentMethod.name;
+          paymentMethodType = paymentMethod.type;
+        }
+      }
+
+      // 5. Create order record
+      await tx.orders.create({
         data: {
-          id: nanoid(),
-          orderId,
-          customerId: data.customerId || null,
-          type: "billing",
-          firstName: data.billingAddress.firstName || null,
-          lastName: data.billingAddress.lastName || null,
-          company: data.billingAddress.company || null,
-          address1: data.billingAddress.address1,
-          address2: data.billingAddress.address2 || null,
-          city: data.billingAddress.city,
-          state: data.billingAddress.state || null,
-          zip: data.billingAddress.zip || null,
-          country: data.billingAddress.country,
-          phone: data.billingAddress.phone || null,
-          isDefault: false,
+          id: orderId,
+          orderNumber,
+          customerId: finalCustomerId,
+          email: data.email || null,
+          status: "pending",
+          financialStatus: "pending",
+          fulfillmentStatus: "unfulfilled",
+          subtotal: data.subtotal.toString(),
+          tax: (data.tax || 0).toString(),
+          shipping: (data.shipping || 0).toString(),
+          discount: (data.discount || 0).toString(),
+          total: data.total.toString(),
+          discountId: data.discountId || null,
+          discountCode: data.discountCode || null,
+          note: data.note || null,
+          shippingMethodId: data.shippingMethodId || null,
+          shippingMethodTitle,
+          isLocalPickup,
+          paymentMethodId: data.paymentMethodId || null,
+          paymentMethodTitle,
+          paymentMethodType,
         },
       });
-    }
 
-    if (data.shippingAddress) {
-      await db.address.create({
-        data: {
+      // 6. Update customer stats
+      if (finalCustomerId) {
+        const currentCustomer = await tx.customers.findFirst({
+          where: { id: finalCustomerId },
+        });
+
+        if (currentCustomer) {
+          const currentOrdersCount = currentCustomer.ordersCount || 0;
+          const currentTotalSpent = parseFloat(currentCustomer.totalSpent || "0");
+
+          await tx.customers.update({
+            where: { id: finalCustomerId },
+            data: {
+              ordersCount: currentOrdersCount + 1,
+              totalSpent: (currentTotalSpent + data.total).toFixed(2),
+              updatedAt: new Date(),
+            },
+          });
+        }
+      }
+
+      // 7. Create order items
+      if (data.items.length > 0) {
+        const itemsToInsert = data.items.map((item) => ({
           id: nanoid(),
           orderId,
-          customerId: data.customerId || null,
-          type: "shipping",
-          firstName: data.shippingAddress.firstName || null,
-          lastName: data.shippingAddress.lastName || null,
-          company: data.shippingAddress.company || null,
-          address1: data.shippingAddress.address1,
-          address2: data.shippingAddress.address2 || null,
-          city: data.shippingAddress.city,
-          state: data.shippingAddress.state || null,
-          zip: data.shippingAddress.zip || null,
-          country: data.shippingAddress.country,
-          phone: data.shippingAddress.phone || null,
-          isDefault: false,
-        },
-      });
-    }
+          productId: item.productId || null,
+          variantId: item.variantId || null,
+          title: item.title,
+          sku: item.sku || null,
+          quantity: item.quantity,
+          price: item.price.toString(),
+          total: (item.price * item.quantity).toString(),
+          variantTitle: item.variantTitle || null,
+        }));
+        await tx.order_items.createMany({ data: itemsToInsert });
+      }
 
-    // Fetch and return the created order
-    const order = await db.order.findUnique({
-      where: { id: orderId },
+      // 8. Reserve inventory (rows already locked, safe to update)
+      for (const [variantId, { inventory: inv, quantity, title, productId }] of inventoryChecks) {
+        const newReserved = inv.reserved + quantity;
+        const newCommitted = inv.committed + quantity;
+        const newAvailable = inv.onHand - newReserved - newCommitted;
+
+        await tx.inventory.update({
+          where: { variantId },
+          data: {
+            reserved: newReserved,
+            committed: newCommitted,
+            available: newAvailable,
+            updatedAt: new Date(),
+          },
+        });
+
+        // Create inventory tracking record
+        await tx.inventory_tracking.create({
+          data: {
+            id: nanoid(),
+            variantId,
+            productId: productId || "",
+            type: "reservation",
+            quantity: quantity,
+            previousAvailable: inv.available,
+            previousReserved: inv.reserved,
+            newAvailable: newAvailable,
+            newReserved: newReserved,
+            reason: `Order created: ${orderNumber}`,
+            referenceType: "order",
+            referenceId: orderId,
+            userId: null,
+          },
+        });
+
+        if (productId) {
+          affectedProductIds.push(productId);
+        }
+      }
+
+      // 9. Create addresses
+      if (data.billingAddress) {
+        await tx.addresses.create({
+          data: {
+            id: nanoid(),
+            orderId,
+            customerId: finalCustomerId,
+            type: "billing",
+            firstName: data.billingAddress.firstName || null,
+            lastName: data.billingAddress.lastName || null,
+            company: data.billingAddress.company || null,
+            address1: data.billingAddress.address1,
+            address2: data.billingAddress.address2 || null,
+            city: data.billingAddress.city,
+            state: data.billingAddress.state || null,
+            zip: data.billingAddress.zip || null,
+            country: data.billingAddress.country,
+            phone: data.billingAddress.phone || null,
+            isDefault: false,
+          },
+        });
+      }
+
+      if (data.shippingAddress) {
+        await tx.addresses.create({
+          data: {
+            id: nanoid(),
+            orderId,
+            customerId: finalCustomerId,
+            type: "shipping",
+            firstName: data.shippingAddress.firstName || null,
+            lastName: data.shippingAddress.lastName || null,
+            company: data.shippingAddress.company || null,
+            address1: data.shippingAddress.address1,
+            address2: data.shippingAddress.address2 || null,
+            city: data.shippingAddress.city,
+            state: data.shippingAddress.state || null,
+            zip: data.shippingAddress.zip || null,
+            country: data.shippingAddress.country,
+            phone: data.shippingAddress.phone || null,
+            isDefault: false,
+          },
+        });
+      }
+
+      // 10. Fetch and return the created order
+      const order = await tx.orders.findUnique({
+        where: { id: orderId },
+      });
+
+      return { order, orderId, affectedProductIds };
+    }, {
+      timeout: 15000, // 15 second timeout for the transaction
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
 
-    return serializeData(order);
+    // After transaction succeeds - do non-critical operations outside transaction
+    if (result.affectedProductIds.length > 0) {
+      await markCollectionsForRegeneration(["inventory"], "product");
+      await syncProductsToGorse(result.affectedProductIds);
+    }
+
+    // Mark any abandoned checkout for this email as recovered
+    if (data.email) {
+      markCheckoutRecoveredServerFn({
+        data: { email: data.email, orderId: result.orderId },
+      }).catch((error) => {
+        console.error("Error marking abandoned checkout as recovered:", error);
+      });
+    }
+
+    // Send order confirmation email (fire-and-forget, don't block)
+    if (data.email) {
+      sendOrderConfirmationEmail(data.email, result.orderId).catch((emailError) => {
+        console.error("Error sending order confirmation email:", emailError);
+      });
+    }
+
+    return serializeData(result.order);
   });
 
 export const createOrderMutationOptions = (data: Parameters<typeof createOrderServerFn>[0]["data"]) => {
@@ -440,7 +640,7 @@ export const getOrdersServerFn = createServerFn({ method: "POST" })
     }
 
     // Fetch orders with customer
-    const response = await db.order.findMany({
+    const response = await db.orders.findMany({
       where: Object.keys(whereConditions).length > 0 ? whereConditions : undefined,
       include: {
         customer: true,
@@ -457,7 +657,7 @@ export const getOrdersServerFn = createServerFn({ method: "POST" })
     }));
 
     // Get total count with same conditions
-    const totalCount = await db.order.count({
+    const totalCount = await db.orders.count({
       where: Object.keys(whereConditions).length > 0 ? whereConditions : undefined,
     });
 
@@ -495,7 +695,7 @@ export const getOrderByIdServerFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ orderId: z.string() }))
   .handler(async ({ data }) => {
     // Fetch order with customer
-    const orderRow = await db.order.findUnique({
+    const orderRow = await db.orders.findUnique({
       where: { id: data.orderId },
       include: {
         customer: true,
@@ -507,7 +707,7 @@ export const getOrderByIdServerFn = createServerFn({ method: "POST" })
     }
 
     // Fetch order items
-    const itemsRows = await db.orderItem.findMany({
+    const itemsRows = await db.order_items.findMany({
       where: { orderId: data.orderId },
       orderBy: { createdAt: "asc" },
     });
@@ -520,7 +720,7 @@ export const getOrderByIdServerFn = createServerFn({ method: "POST" })
 
         // Try to get variant image first, then product image
         if (item.variantId) {
-          const variantMediaRow = await db.productVariantMedia.findFirst({
+          const variantMediaRow = await db.product_variant_media.findFirst({
             where: {
               variantId: item.variantId,
               isPrimary: true,
@@ -540,7 +740,7 @@ export const getOrderByIdServerFn = createServerFn({ method: "POST" })
 
         // Fallback to product image if variant image not found
         if (!imageUrl && item.productId) {
-          const productMediaRow = await db.productMedia.findFirst({
+          const productMediaRow = await db.product_media.findFirst({
             where: {
               productId: item.productId,
               isPrimary: true,
@@ -562,7 +762,7 @@ export const getOrderByIdServerFn = createServerFn({ method: "POST" })
     );
 
     // Fetch addresses
-    const orderAddresses = await db.address.findMany({
+    const orderAddresses = await db.addresses.findMany({
       where: { orderId: data.orderId },
     });
 
@@ -617,7 +817,7 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
     const affectedProductIds: string[] = [];
 
     // Get existing order items to calculate inventory changes
-    const existingItems = await db.orderItem.findMany({
+    const existingItems = await db.order_items.findMany({
       where: { orderId: data.orderId },
     });
 
@@ -669,7 +869,7 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
               },
             });
 
-            await db.inventoryTracking.create({
+            await db.inventory_tracking.create({
               data: {
                 id: nanoid(),
                 variantId: existingItem.variantId,
@@ -734,7 +934,7 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
               },
             });
 
-            await db.inventoryTracking.create({
+            await db.inventory_tracking.create({
               data: {
                 id: nanoid(),
                 variantId: existingItem.variantId,
@@ -799,7 +999,7 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
               },
             });
 
-            await db.inventoryTracking.create({
+            await db.inventory_tracking.create({
               data: {
                 id: nanoid(),
                 variantId: newItem.variantId,
@@ -828,7 +1028,7 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
     }
 
     // Delete all existing items
-    await db.orderItem.deleteMany({
+    await db.order_items.deleteMany({
       where: { orderId: data.orderId },
     });
 
@@ -846,11 +1046,11 @@ export const updateOrderServerFn = createServerFn({ method: "POST" })
         total: (item.price * item.quantity).toString(),
         variantTitle: item.variantTitle || null,
       }));
-      await db.orderItem.createMany({ data: itemsToInsert });
+      await db.order_items.createMany({ data: itemsToInsert });
     }
 
     // Update order totals
-    await db.order.update({
+    await db.orders.update({
       where: { id: data.orderId },
       data: {
         subtotal: data.subtotal.toString(),
@@ -917,7 +1117,7 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
             });
 
             // Create inventory tracking record
-            await db.inventoryTracking.create({
+            await db.inventory_tracking.create({
               data: {
                 id: nanoid(),
                 variantId: item.variantId,
@@ -944,7 +1144,7 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
       }
     }
 
-    await db.order.update({
+    await db.orders.update({
       where: { id: data.orderId },
       data: {
         status: "cancelled",
@@ -961,7 +1161,7 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
       const orderTotal = parseFloat(orderData.total);
 
       // Get current customer data
-      const currentCustomer = await db.customer.findFirst({
+      const currentCustomer = await db.customers.findFirst({
         where: { id: orderData.customerId },
       });
 
@@ -970,7 +1170,7 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
         const currentTotalSpent = Math.max(0, parseFloat(currentCustomer.totalSpent || "0") - orderTotal);
 
         // Decrease orders count and subtract from total spent
-        await db.customer.update({
+        await db.customers.update({
           where: { id: orderData.customerId },
           data: {
             ordersCount: currentOrdersCount,
@@ -986,6 +1186,14 @@ export const cancelOrderServerFn = createServerFn({ method: "POST" })
 
     // Sync affected products to Gorse (products may be back in stock after cancellation)
     await syncProductsToGorse(affectedProductIds);
+
+    // Send order cancelled email (fire-and-forget, don't block)
+    const customerEmail = orderData.email || orderData.customer?.email;
+    if (customerEmail) {
+      sendOrderCancelledEmail(customerEmail, data.orderId).catch((emailError) => {
+        console.error("Error sending order cancelled email:", emailError);
+      });
+    }
 
     // Fetch and return updated order
     return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));
@@ -1025,6 +1233,7 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
     z.object({
       orderId: z.string(),
       trackingNumber: z.string().optional().nullable(),
+      shippingCompany: z.string().optional().nullable(),
     })
   )
   .handler(async ({ data }) => {
@@ -1088,8 +1297,12 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
         },
       });
 
+      // Deduct from inventory batches using FIFO for sell-through tracking
+      const { deductFromBatchesFIFO } = await import("@/queries/inventory");
+      await deductFromBatchesFIFO(db, item.variantId, item.quantity);
+
       // Create inventory tracking record
-      await db.inventoryTracking.create({
+      await db.inventory_tracking.create({
         data: {
           id: nanoid(),
           variantId: item.variantId,
@@ -1114,13 +1327,14 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
     }
 
     // Update order fulfillment status, payment status, order status, and tracking number
-    await db.order.update({
+    await db.orders.update({
       where: { id: data.orderId },
       data: {
         status: "fulfilled",
         financialStatus: "paid",
         fulfillmentStatus: "fulfilled",
         trackingNumber: data.trackingNumber || null,
+        shippingCompany: data.shippingCompany || null,
         updatedAt: new Date(),
       },
     });
@@ -1134,23 +1348,36 @@ export const fulfillOrderServerFn = createServerFn({ method: "POST" })
     // Sync affected products to Gorse (products may be out of stock after fulfillment)
     await syncProductsToGorse(affectedProductIds);
 
+    // Send order fulfilled email (fire-and-forget, don't block)
+    const fulfilledCustomerEmail = orderData.email || orderData.customer?.email;
+    if (fulfilledCustomerEmail) {
+      sendOrderFulfilledEmail(fulfilledCustomerEmail, data.orderId, {
+        number: data.trackingNumber || orderData.trackingNumber || "",
+        shippingCompany: data.shippingCompany || orderData.shippingCompany || undefined,
+      }).catch((emailError) => {
+        console.error("Error sending order fulfilled email:", emailError);
+      });
+    }
+
     // Fetch and return updated order
     return serializeData(await getOrderByIdServerFn({ data: { orderId: data.orderId } }));
   });
 
-// Update tracking number for an order
+// Update tracking info for an order
 export const updateOrderTrackingServerFn = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       orderId: z.string(),
       trackingNumber: z.string().optional().nullable(),
+      shippingCompany: z.string().optional().nullable(),
     })
   )
   .handler(async ({ data }) => {
-    await db.order.update({
+    await db.orders.update({
       where: { id: data.orderId },
       data: {
         trackingNumber: data.trackingNumber || null,
+        shippingCompany: data.shippingCompany || null,
         updatedAt: new Date(),
       },
     });
@@ -1172,7 +1399,7 @@ export const getUserOrdersServerFn = createServerFn({ method: "POST" })
     const { page = 1, limit = 10 } = data;
 
     // Find customer by email
-    const customer = await db.customer.findFirst({
+    const customer = await db.customers.findFirst({
       where: { email: userEmail },
     });
 
@@ -1188,7 +1415,7 @@ export const getUserOrdersServerFn = createServerFn({ method: "POST" })
     }
 
     // Fetch orders for this customer
-    const response = await db.order.findMany({
+    const response = await db.orders.findMany({
       where: { customerId: customer.id },
       orderBy: { createdAt: "desc" },
       take: limit,
@@ -1196,7 +1423,7 @@ export const getUserOrdersServerFn = createServerFn({ method: "POST" })
     });
 
     // Get total count
-    const totalCount = await db.order.count({
+    const totalCount = await db.orders.count({
       where: { customerId: customer.id },
     });
 
@@ -1233,7 +1460,7 @@ export const getUserOrderByIdServerFn = createServerFn({ method: "POST" })
     const userEmail = context.user.email;
 
     // Find customer by email
-    const customer = await db.customer.findFirst({
+    const customer = await db.customers.findFirst({
       where: { email: userEmail },
     });
 
@@ -1242,7 +1469,7 @@ export const getUserOrderByIdServerFn = createServerFn({ method: "POST" })
     }
 
     // Fetch order and verify it belongs to the customer
-    const orderRow = await db.order.findFirst({
+    const orderRow = await db.orders.findFirst({
       where: {
         id: data.orderId,
         customerId: customer.id,

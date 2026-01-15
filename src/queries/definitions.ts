@@ -17,7 +17,7 @@ export const getDefinitionsServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { search = "", page = 1, limit = 25 } = data;
 
-    const response = await db.definition.findMany({
+    const response = await db.definitions.findMany({
       where: search
         ? { name: { contains: search } }
         : undefined,
@@ -26,7 +26,7 @@ export const getDefinitionsServerFn = createServerFn({ method: "POST" })
       orderBy: { position: "asc" },
     });
 
-    const totalCount = await db.definition.count({
+    const totalCount = await db.definitions.count({
       where: search
         ? { name: { contains: search } }
         : undefined,
@@ -58,7 +58,7 @@ export const createDefinitionServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const definitionId = nanoid();
 
-    const definition = await db.definition.create({
+    const definition = await db.definitions.create({
       data: {
         id: definitionId,
         name: data.name,
@@ -82,7 +82,7 @@ export const updateDefinitionServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const definition = await db.definition.update({
+    const definition = await db.definitions.update({
       where: { id: data.id },
       data: {
         name: data.name,
@@ -102,7 +102,7 @@ export const deleteDefinitionServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    await db.definition.delete({
+    await db.definitions.delete({
       where: { id: data.id },
     });
     return {

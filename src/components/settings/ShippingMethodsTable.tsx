@@ -86,11 +86,17 @@ export const columns: ColumnDef<ShippingMethod>[] = [
     header: "Cijena / Tip",
     cell: ({ row }) => {
       const isFreeShipping = row.original.isFreeShipping;
+      const isLocalPickup = row.original.isLocalPickup;
       const price = parseFloat(row.getValue("price") || "0");
       const minimumOrderAmount = row.original.minimumOrderAmount
         ? parseFloat(row.original.minimumOrderAmount)
         : null;
 
+      if (isLocalPickup) {
+        return (
+          <div className="font-medium text-blue-600">Osobno preuzimanje</div>
+        );
+      }
       if (isFreeShipping) {
         return (
           <div className="flex flex-col">
@@ -133,6 +139,7 @@ export const columns: ColumnDef<ShippingMethod>[] = [
               description: row.original.description || "",
               price: parseFloat(row.original.price || "0"),
               isFreeShipping: row.original.isFreeShipping || false,
+              isLocalPickup: row.original.isLocalPickup || false,
               minimumOrderAmount: row.original.minimumOrderAmount
                 ? parseFloat(row.original.minimumOrderAmount)
                 : null,

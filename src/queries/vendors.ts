@@ -18,7 +18,7 @@ export const getVendorsServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { search = "", page = 1, limit = 25 } = data;
 
-    const response = await db.vendor.findMany({
+    const response = await db.vendors.findMany({
       where: search
         ? { name: { contains: search } }
         : undefined,
@@ -26,7 +26,7 @@ export const getVendorsServerFn = createServerFn({ method: "POST" })
       skip: (page - 1) * limit,
     });
 
-    const totalCount = await db.vendor.count({
+    const totalCount = await db.vendors.count({
       where: search
         ? { name: { contains: search } }
         : undefined,
@@ -60,7 +60,7 @@ export const createVendorServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const vendorId = nanoid();
 
-    const vendor = await db.vendor.create({
+    const vendor = await db.vendors.create({
       data: {
         id: vendorId,
         name: data.name,
@@ -88,7 +88,7 @@ export const updateVendorServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const vendor = await db.vendor.update({
+    const vendor = await db.vendors.update({
       where: { id: data.id },
       data: {
         name: data.name,
@@ -116,7 +116,7 @@ export const deleteVendorServerFn = createServerFn({ method: "POST" })
     // Mark collections before deleting (so we have the vendor ID)
     await markCollectionsForRegeneration(["vendorId"], "vendor", data.id);
 
-    await db.vendor.delete({
+    await db.vendors.delete({
       where: { id: data.id },
     });
     return {

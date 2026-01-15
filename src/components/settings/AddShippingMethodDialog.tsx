@@ -29,6 +29,7 @@ export function AddShippingMethodDialog() {
 			description: "",
 			price: "0.00",
 			isFreeShipping: false,
+			isLocalPickup: false,
 			minimumOrderAmount: "0.00",
 			active: true,
 		},
@@ -39,6 +40,7 @@ export function AddShippingMethodDialog() {
 					description: value.description || undefined,
 					price: parseFloat(value.price),
 					isFreeShipping: value.isFreeShipping,
+					isLocalPickup: value.isLocalPickup,
 					minimumOrderAmount: value.isFreeShipping
 						? parseFloat(value.minimumOrderAmount ?? "0.00")
 						: null,
@@ -124,6 +126,22 @@ export function AddShippingMethodDialog() {
 									/>
 									<Label htmlFor="isFreeShipping">
 										Besplatna dostava
+									</Label>
+								</>
+							)}
+						/>
+					</div>
+					<div className="flex items-center gap-2">
+						<form.Field
+							name="isLocalPickup"
+							children={(field) => (
+								<>
+									<Switch
+										checked={field.state.value}
+										onCheckedChange={field.handleChange}
+									/>
+									<Label htmlFor="isLocalPickup">
+										Osobno preuzimanje
 									</Label>
 								</>
 							)}

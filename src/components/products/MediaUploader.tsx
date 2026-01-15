@@ -20,7 +20,7 @@ import {
 	rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useState, useEffect, useId } from "react";
+import { useState, useEffect, useId, useRef } from "react";
 import { createMediaServerFn } from "@/queries/products";
 import { ProxyImage } from "@/components/ui/proxy-image";
 
@@ -127,6 +127,7 @@ export function MediaUploader({
 	const [isUploading, setIsUploading] = useState(false);
 	const [uploadCounter, setUploadCounter] = useState(0);
 	const baseId = useId();
+	const isInternalUpdate = useRef(false);
 
 	const sensors = useSensors(
 		useSensor(PointerSensor),
@@ -135,9 +136,28 @@ export function MediaUploader({
 		})
 	);
 
+	// Sync external value changes to internal state (e.g., form reset, initial load)
 	useEffect(() => {
-		onChange?.(mediaItems);
-	}, [mediaItems, onChange]);
+		if (!isInternalUpdate.current) {
+			// Only sync if the value actually changed from external source
+			const valueIds = value.map(v => v.mediaId || v.id).sort().join(',');
+			const currentIds = mediaItems.map(m => m.mediaId || m.id).sort().join(',');
+			if (valueIds !== currentIds) {
+				setMediaItems(value);
+			}
+		}
+		isInternalUpdate.current = false;
+	}, [value]);
+
+	// Notify parent of internal changes
+	const updateMediaItems = (updater: (prev: MediaItem[]) => MediaItem[]) => {
+		isInternalUpdate.current = true;
+		setMediaItems(prev => {
+			const newItems = updater(prev);
+			onChange?.(newItems);
+			return newItems;
+		});
+	};
 
 	const handleUploadComplete = async (data: {
 		files: Array<{
@@ -187,7 +207,7 @@ export function MediaUploader({
 
 			setUploadCounter((prev) => prev + data.files.length);
 
-			setMediaItems((prev) => {
+			updateMediaItems((prev) => {
 				const updated = [...prev, ...newMediaItems];
 				// Ensure only first item is primary
 				return updated.map((item, index) => ({
@@ -212,7 +232,7 @@ export function MediaUploader({
 		const { active, over } = event;
 
 		if (over && active.id !== over.id) {
-			setMediaItems((items) => {
+			updateMediaItems((items) => {
 				const oldIndex = items.findIndex((item) => item.id === active.id);
 				const newIndex = items.findIndex((item) => item.id === over.id);
 				const newItems = arrayMove(items, oldIndex, newIndex);
@@ -227,7 +247,7 @@ export function MediaUploader({
 	};
 
 	const handleRemove = (id: string) => {
-		setMediaItems((items) => {
+		updateMediaItems((items) => {
 			const filtered = items.filter((item) => item.id !== id);
 			// Ensure first item is primary after removal
 			return filtered.map((item, index) => ({

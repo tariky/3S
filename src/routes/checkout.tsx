@@ -3,6 +3,7 @@ import { ShopLayout } from "@/components/shop/ShopLayout";
 import { getPublicShopSettingsServerFn } from "@/queries/settings";
 import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
 	getCartQueryOptions,
 	clearCartMutationOptions,
@@ -14,6 +15,7 @@ import {
 } from "@/queries/discounts";
 import { getActiveShippingMethodsQueryOptions } from "@/queries/shipping-methods";
 import { createOrderServerFn } from "@/queries/orders";
+import { captureAbandonedCheckoutServerFn } from "@/queries/abandoned-checkouts";
 import {
 	getUserAddressesQueryOptions,
 	createUserAddressServerFn,
@@ -30,10 +32,15 @@ import {
 	Check,
 	ShoppingBag,
 	ChevronDown,
-	Truck,
-	CreditCard,
 	Tag,
 	X,
+	MapPin,
+	Mail,
+	Phone,
+	Home,
+	Truck,
+	Wallet,
+	Store,
 } from "lucide-react";
 import { useForm } from "@tanstack/react-form";
 import { z } from "zod";
@@ -105,21 +112,19 @@ function CheckoutPage() {
 		getActiveShippingMethodsQueryOptions()
 	);
 
-	// Transform shipping methods to use string prices
 	const shippingMethods = shippingMethodsRaw.map((method) => ({
 		id: method.id,
 		name: method.name,
 		description: method.description,
 		price: method.price?.toString() || null,
 		isFreeShipping: method.isFreeShipping,
+		isLocalPickup: method.isLocalPickup ?? false,
 		minimumOrderAmount: method.minimumOrderAmount?.toString() || null,
 	}));
 
-	// Auth state
 	const { data: session } = authClient.useSession();
 	const isAuthenticated = !!session?.user;
 
-	// Fetch user's saved addresses if authenticated
 	const { data: savedAddresses = [], isLoading: addressesLoading } = useQuery({
 		...getUserAddressesQueryOptions(),
 		enabled: isAuthenticated,
@@ -138,12 +143,9 @@ function CheckoutPage() {
 		isLoading: boolean;
 	};
 
-	const [selectedShippingMethodId, setSelectedShippingMethodId] = useState<
-		string | null
-	>(null);
-	const [selectedAddressId, setSelectedAddressId] = useState<string | null>(
-		null
-	);
+	const [deliveryType, setDeliveryType] = useState<"shipping" | "pickup">("shipping");
+	const [selectedShippingMethodId, setSelectedShippingMethodId] = useState<string | null>(null);
+	const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
 	const [showNewAddressForm, setShowNewAddressForm] = useState(false);
 	const [saveAddress, setSaveAddress] = useState(true);
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -158,12 +160,10 @@ function CheckoutPage() {
 	} | null>(null);
 	const [discountError, setDiscountError] = useState("");
 	const [discountLoading, setDiscountLoading] = useState(false);
+	const [phoneBlurred, setPhoneBlurred] = useState(false);
 
-	const clearCartMutation = useMutation(
-		clearCartMutationOptions(sessionId || undefined)
-	);
+	const clearCartMutation = useMutation(clearCartMutationOptions(sessionId || undefined));
 
-	// Get default shipping address
 	const defaultShippingAddress =
 		savedAddresses.find((addr) => addr.type === "shipping" && addr.isDefault) ||
 		savedAddresses.find((addr) => addr.type === "shipping") ||
@@ -182,18 +182,15 @@ function CheckoutPage() {
 		},
 		onSubmit: async ({ value }) => {
 			if (!cartData || !cartData.items || cartData.items.length === 0) {
-				alert("Korpa je prazna");
+				toast.error("Korpa je prazna");
 				return;
 			}
 
 			setIsSubmitting(true);
 
 			try {
-				// Prepare order items from cart
 				const orderItems = cartData.items.map((item) => {
-					const price = parseFloat(
-						item.variant?.price || item.product?.price || "0"
-					);
+					const price = parseFloat(item.variant?.price || item.product?.price || "0");
 					const variantLabel =
 						item.variantOptions && item.variantOptions.length > 0
 							? item.variantOptions.map((opt) => opt.optionValue).join(" / ")
@@ -209,12 +206,9 @@ function CheckoutPage() {
 					};
 				});
 
-				// Calculate totals
 				const items = cartData.items || [];
 				const subtotal = items.reduce((sum: number, item: CartItem) => {
-					const price = parseFloat(
-						item.variant?.price || item.product?.price || "0"
-					);
+					const price = parseFloat(item.variant?.price || item.product?.price || "0");
 					return sum + price * item.quantity;
 				}, 0);
 
@@ -224,16 +218,12 @@ function CheckoutPage() {
 
 				const calculateShippingCost = () => {
 					if (!selectedShippingMethod) return 0;
-
 					if (selectedShippingMethod.isFreeShipping) {
 						const minimumAmount = selectedShippingMethod.minimumOrderAmount
 							? parseFloat(selectedShippingMethod.minimumOrderAmount)
 							: 0;
-						if (subtotal >= minimumAmount) {
-							return 0;
-						}
+						if (subtotal >= minimumAmount) return 0;
 					}
-
 					return parseFloat(selectedShippingMethod.price || "0");
 				};
 
@@ -254,7 +244,6 @@ function CheckoutPage() {
 				const discountAmount = calcDiscount();
 				const total = subtotal + shippingCost - discountAmount;
 
-				// Create order
 				const order = (await createOrderServerFn({
 					data: {
 						email: value.email,
@@ -280,7 +269,6 @@ function CheckoutPage() {
 					},
 				})) as { id: string };
 
-				// Increment discount usage if discount was applied
 				if (appliedDiscount?.id) {
 					try {
 						await incrementDiscountUsageServerFn({
@@ -291,7 +279,6 @@ function CheckoutPage() {
 					}
 				}
 
-				// Save address to address book if user is authenticated and wants to save
 				if (isAuthenticated && saveAddress && !selectedAddressId) {
 					await saveAddressToBook({
 						firstName: value.name,
@@ -303,7 +290,6 @@ function CheckoutPage() {
 					});
 				}
 
-				// Clear cart
 				try {
 					await clearCartMutation.mutateAsync();
 					queryClient.invalidateQueries({ queryKey: [CART_QUERY_KEY] });
@@ -325,16 +311,26 @@ function CheckoutPage() {
 				console.error("Error creating order:", error);
 				const err = error as { message?: string };
 				const errorMessage =
-					err?.message ||
-					"Greška pri kreiranju narudžbe. Molimo pokušajte ponovo.";
-				alert(errorMessage);
+					err?.message || "Greška pri kreiranju narudžbe. Molimo pokušajte ponovo.";
+
+				const isInventoryError =
+					errorMessage.includes("nije dostupan") || errorMessage.includes("na zalihi");
+
+				if (isInventoryError) {
+					toast.error(errorMessage, {
+						duration: 6000,
+						description: "Molimo osvježite korpu i pokušajte ponovo.",
+					});
+					queryClient.invalidateQueries({ queryKey: [CART_QUERY_KEY] });
+				} else {
+					toast.error(errorMessage);
+				}
 			} finally {
 				setIsSubmitting(false);
 			}
 		},
 	});
 
-	// Auto-fill form with default address when addresses are loaded
 	useEffect(() => {
 		if (
 			isAuthenticated &&
@@ -347,14 +343,12 @@ function CheckoutPage() {
 		}
 	}, [isAuthenticated, savedAddresses.length, defaultShippingAddress?.id]);
 
-	// Fill form with user email when session loads
 	useEffect(() => {
 		if (session?.user?.email) {
 			form.setFieldValue("email", session.user.email);
 		}
 	}, [session?.user?.email]);
 
-	// Function to fill form with address data
 	const fillFormWithAddress = (address: (typeof savedAddresses)[0]) => {
 		form.setFieldValue("name", address.firstName || "");
 		form.setFieldValue("lastName", address.lastName || "");
@@ -364,7 +358,6 @@ function CheckoutPage() {
 		form.setFieldValue("phone", address.phone || "");
 	};
 
-	// Handle address selection
 	const handleAddressSelect = (addressId: string) => {
 		const address = savedAddresses.find((a) => a.id === addressId);
 		if (address) {
@@ -374,7 +367,6 @@ function CheckoutPage() {
 		}
 	};
 
-	// Handle new address form toggle
 	const handleNewAddressClick = () => {
 		setSelectedAddressId(null);
 		setShowNewAddressForm(true);
@@ -386,7 +378,6 @@ function CheckoutPage() {
 		form.setFieldValue("phone", "");
 	};
 
-	// Save address to address book
 	const saveAddressToBook = async (addressData: {
 		firstName: string;
 		lastName: string;
@@ -395,9 +386,7 @@ function CheckoutPage() {
 		zip: string;
 		phone: string;
 	}) => {
-		if (!isAuthenticated || !saveAddress || selectedAddressId) {
-			return;
-		}
+		if (!isAuthenticated || !saveAddress || selectedAddressId) return;
 
 		try {
 			await createUserAddressServerFn({
@@ -419,7 +408,6 @@ function CheckoutPage() {
 		}
 	};
 
-	// Apply discount code
 	const handleApplyDiscount = async () => {
 		setDiscountError("");
 		setDiscountLoading(true);
@@ -463,17 +451,21 @@ function CheckoutPage() {
 		setDiscountError("");
 	};
 
-	// Calculate totals
 	const items = cartData?.items || [];
 	const subtotal = items.reduce((sum: number, item: CartItem) => {
-		const price = parseFloat(
-			item.variant?.price || item.product?.price || "0"
-		);
+		const price = parseFloat(item.variant?.price || item.product?.price || "0");
 		return sum + price * item.quantity;
 	}, 0);
 
-	// Filter shipping methods
-	const availableShippingMethods = shippingMethods.filter((method) => {
+	// Separate shipping methods by type
+	const localPickupMethod = shippingMethods.find((method) => method.isLocalPickup);
+	const deliveryMethods = shippingMethods.filter((method) => !method.isLocalPickup);
+
+	// Check if local pickup is available
+	const hasLocalPickup = !!localPickupMethod;
+
+	// Filter available shipping methods based on delivery type and cart subtotal
+	const availableShippingMethods = deliveryMethods.filter((method) => {
 		if (method.isFreeShipping) {
 			const minimumAmount = method.minimumOrderAmount
 				? parseFloat(method.minimumOrderAmount)
@@ -483,55 +475,60 @@ function CheckoutPage() {
 		return true;
 	});
 
-	// Get selected shipping method
-	const selectedShippingMethod = availableShippingMethods.find(
-		(method) => method.id === selectedShippingMethodId
-	);
+	const selectedShippingMethod = deliveryType === "pickup" && localPickupMethod
+		? localPickupMethod
+		: availableShippingMethods.find((method) => method.id === selectedShippingMethodId);
 
-	// Calculate shipping cost
 	const calculateShippingCost = () => {
 		if (!selectedShippingMethod) return 0;
-
 		if (selectedShippingMethod.isFreeShipping) {
 			const minimumAmount = selectedShippingMethod.minimumOrderAmount
 				? parseFloat(selectedShippingMethod.minimumOrderAmount)
 				: 0;
-			if (subtotal >= minimumAmount) {
-				return 0;
-			}
+			if (subtotal >= minimumAmount) return 0;
 		}
-
 		return parseFloat(selectedShippingMethod.price || "0");
 	};
 
 	const shippingCost = calculateShippingCost();
 	const calculateDiscountAmount = () => {
 		if (!appliedDiscount) return 0;
-
 		let discount = 0;
 		if (appliedDiscount.type === "percentage") {
 			discount = (subtotal * appliedDiscount.amount) / 100;
-			// Apply maximum discount cap if set
 			if (appliedDiscount.maxDiscount) {
 				discount = Math.min(discount, appliedDiscount.maxDiscount);
 			}
 		} else {
 			discount = appliedDiscount.amount;
 		}
-
-		// Discount cannot exceed subtotal
 		return Math.min(discount, subtotal);
 	};
 	const discountAmount = calculateDiscountAmount();
 	const total = subtotal + shippingCost - discountAmount;
-	const itemCount = items.reduce(
-		(sum: number, item: CartItem) => sum + item.quantity,
-		0
-	);
+	const itemCount = items.reduce((sum: number, item: CartItem) => sum + item.quantity, 0);
 
-	// Auto-select first shipping method
+	// Handle delivery type changes
+	useEffect(() => {
+		if (deliveryType === "pickup" && localPickupMethod) {
+			setSelectedShippingMethodId(localPickupMethod.id);
+			form.setFieldValue("shippingMethodId", localPickupMethod.id);
+		} else if (deliveryType === "shipping" && availableShippingMethods.length > 0) {
+			// When switching to shipping, select first available method
+			const currentMethodIsValid = availableShippingMethods.find(
+				(m) => m.id === selectedShippingMethodId
+			);
+			if (!currentMethodIsValid) {
+				setSelectedShippingMethodId(availableShippingMethods[0].id);
+				form.setFieldValue("shippingMethodId", availableShippingMethods[0].id);
+			}
+		}
+	}, [deliveryType, localPickupMethod?.id, availableShippingMethods.length]);
+
+	// Auto-select first shipping method on load
 	useEffect(() => {
 		if (
+			deliveryType === "shipping" &&
 			availableShippingMethods.length > 0 &&
 			!selectedShippingMethodId &&
 			!shippingLoading
@@ -539,11 +536,12 @@ function CheckoutPage() {
 			setSelectedShippingMethodId(availableShippingMethods[0].id);
 			form.setFieldValue("shippingMethodId", availableShippingMethods[0].id);
 		}
-	}, [availableShippingMethods.length, shippingLoading]);
+	}, [availableShippingMethods.length, shippingLoading, deliveryType]);
 
-	// Reset selection if current selection is not available
+	// Ensure selected method is valid
 	useEffect(() => {
 		if (
+			deliveryType === "shipping" &&
 			selectedShippingMethodId &&
 			!availableShippingMethods.find((m) => m.id === selectedShippingMethodId) &&
 			availableShippingMethods.length > 0
@@ -551,17 +549,13 @@ function CheckoutPage() {
 			setSelectedShippingMethodId(availableShippingMethods[0].id);
 			form.setFieldValue("shippingMethodId", availableShippingMethods[0].id);
 		}
-	}, [selectedShippingMethodId, availableShippingMethods]);
+	}, [selectedShippingMethodId, availableShippingMethods, deliveryType]);
 
-	if (
-		cartLoading ||
-		shippingLoading ||
-		(isAuthenticated && addressesLoading)
-	) {
+	if (cartLoading || shippingLoading || (isAuthenticated && addressesLoading)) {
 		return (
 			<ShopLayout settings={settings} navigationItems={navigationItems}>
 				<div className="min-h-[60vh] flex items-center justify-center">
-					<Loader2 className="size-8 animate-spin text-gray-400" />
+					<Loader2 className="size-8 animate-spin text-muted-foreground" />
 				</div>
 			</ShopLayout>
 		);
@@ -571,16 +565,14 @@ function CheckoutPage() {
 		return (
 			<ShopLayout settings={settings} navigationItems={navigationItems}>
 				<div className="min-h-[60vh] flex flex-col items-center justify-center px-4">
-					<div className="w-20 h-20 rounded-full bg-gray-50 flex items-center justify-center mb-6">
-						<ShoppingBag className="size-10 text-gray-300" />
+					<div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-6">
+						<ShoppingBag className="size-8 text-muted-foreground" />
 					</div>
-					<h1 className="text-xl font-semibold text-gray-900 mb-2">
-						Korpa je prazna
-					</h1>
-					<p className="text-sm text-gray-500 mb-8 text-center max-w-xs">
-						Dodajte proizvode u korpu da biste nastavili na plaćanje
+					<h1 className="text-xl font-semibold text-foreground mb-2">Korpa je prazna</h1>
+					<p className="text-sm text-muted-foreground mb-8 text-center max-w-xs">
+						Dodajte proizvode u korpu da biste nastavili
 					</p>
-					<Button asChild size="lg">
+					<Button asChild>
 						<Link to="/products" search={{ tags: undefined }}>
 							Pogledaj proizvode
 						</Link>
@@ -590,220 +582,235 @@ function CheckoutPage() {
 		);
 	}
 
+	const inputClassName = "h-12 bg-background";
+
 	return (
 		<ShopLayout settings={settings} navigationItems={navigationItems}>
-			<main className="min-h-screen bg-gray-50">
-				<div className="container mx-auto px-4 py-6 lg:py-10">
-					<div className="max-w-6xl mx-auto">
+			<main className="min-h-screen bg-background">
+				<div className="container mx-auto px-4 py-8 lg:py-12">
+					<div className="max-w-5xl mx-auto">
 						{/* Header */}
-						<div className="mb-8">
-							<h1 className="text-2xl lg:text-3xl font-semibold text-gray-900">
-								Naplata
-							</h1>
-							<p className="text-sm text-gray-500 mt-1">
-								Popunite podatke za dostavu i plaćanje
-							</p>
+						<div className="mb-10">
+							<h1 className="text-2xl lg:text-3xl font-semibold text-foreground">Naplata</h1>
 						</div>
 
-						<div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+						<div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
 							{/* Checkout Form */}
-							<div className="lg:col-span-7 space-y-6">
+							<div className="lg:col-span-7">
 								<form
 									onSubmit={(e) => {
 										e.preventDefault();
 										e.stopPropagation();
 										form.handleSubmit();
 									}}
-									className="space-y-6"
+									className="space-y-10"
 								>
-									{/* Contact Information */}
-									<section className="bg-white rounded-xl p-6 shadow-sm">
-										<h2 className="text-base font-semibold text-gray-900 mb-5 flex items-center gap-2">
-											<div className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center">
+									{/* Contact Section */}
+									<section>
+										<div className="flex items-center gap-3 mb-6">
+											<div className="flex items-center justify-center w-8 h-8 rounded-full bg-foreground text-background text-sm font-medium">
 												1
 											</div>
-											Kontakt podaci
-										</h2>
+											<h2 className="text-lg font-medium text-foreground">Kontakt</h2>
+										</div>
 
 										<div className="space-y-4">
-											{/* Email */}
 											<form.Field
 												name="email"
 												validators={{
 													onChange: ({ value }) => {
-														const result =
-															checkoutSchema.shape.email.safeParse(value);
-														return result.success
-															? undefined
-															: result.error.issues[0]?.message;
+														const result = checkoutSchema.shape.email.safeParse(value);
+														return result.success ? undefined : result.error.issues[0]?.message;
 													},
 												}}
 											>
 												{(field) => (
-													<div className="space-y-1.5">
-														<Label htmlFor="email" className="text-sm">
-															Email adresa
+													<div className="space-y-2">
+														<Label htmlFor="email" className="text-sm font-medium">
+															Email
 														</Label>
-														<Input
-															id="email"
-															type="email"
-															value={field.state.value}
-															onBlur={field.handleBlur}
-															onChange={(e) =>
-																field.handleChange(e.target.value)
-															}
-															placeholder="vas@email.com"
-															className={cn(
-																"h-11",
-																field.state.meta.errors.length > 0 &&
-																	"border-red-500"
-															)}
-														/>
+														<div className="relative">
+															<Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+															<Input
+																id="email"
+																type="email"
+																value={field.state.value}
+																onBlur={async () => {
+																	field.handleBlur();
+																	// Capture abandoned checkout on email blur
+																	const email = field.state.value;
+																	if (email && checkoutSchema.shape.email.safeParse(email).success && cartData?.items?.length) {
+																		try {
+																			await captureAbandonedCheckoutServerFn({
+																				data: {
+																					email,
+																					cartData: cartData.items.map((item) => ({
+																						productId: item.productId || null,
+																						variantId: item.variantId || null,
+																						title: item.product?.name || "Proizvod",
+																						sku: item.variant?.sku || item.product?.sku || null,
+																						quantity: item.quantity,
+																						price: parseFloat(item.variant?.price || item.product?.price || "0"),
+																						variantTitle: item.variantOptions?.map((opt) => opt.optionValue).join(" / ") || null,
+																						imageUrl: item.image || null,
+																					})),
+																					customerName: form.getFieldValue("name") && form.getFieldValue("lastName")
+																						? `${form.getFieldValue("name")} ${form.getFieldValue("lastName")}`
+																						: null,
+																					phone: form.getFieldValue("phone") || null,
+																					subtotal,
+																					checkoutUrl: window.location.href,
+																				},
+																			});
+																		} catch (error) {
+																			// Silently fail - this is a non-critical operation
+																			console.error("Failed to capture abandoned checkout:", error);
+																		}
+																	}
+																}}
+																onChange={(e) => field.handleChange(e.target.value)}
+																placeholder="vas@email.com"
+																className={cn(
+																	inputClassName,
+																	"pl-10",
+																	field.state.meta.errors.length > 0 && "border-destructive"
+																)}
+															/>
+														</div>
 														{field.state.meta.errors.length > 0 && (
-															<p className="text-xs text-red-500">
-																{field.state.meta.errors[0]}
-															</p>
+															<p className="text-xs text-destructive">{field.state.meta.errors[0]}</p>
 														)}
 													</div>
 												)}
 											</form.Field>
 
-											{/* Phone */}
 											<form.Field
 												name="phone"
 												validators={{
-													onBlur: ({ value }) => {
-														const result =
-															checkoutSchema.shape.phone.safeParse(value);
-														return result.success
-															? undefined
-															: result.error.issues[0]?.message;
+													onChange: ({ value }) => {
+														// Only validate after user has blurred the field
+														if (!phoneBlurred) return undefined;
+														const result = checkoutSchema.shape.phone.safeParse(value);
+														return result.success ? undefined : result.error.issues[0]?.message;
 													},
 												}}
 											>
-												{(field) => (
-													<div className="space-y-1.5">
-														<Label htmlFor="phone" className="text-sm">
-															Telefon
-														</Label>
-														<PhoneInput
-															value={field.state.value}
-															onChange={(phone) => field.handleChange(phone)}
-															error={field.state.meta.isTouched && field.state.meta.errors.length > 0}
-														/>
-														{field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
-															<p className="text-xs text-red-500">
-																{field.state.meta.errors[0]}
-															</p>
-														)}
-													</div>
-												)}
+												{(field) => {
+													const showError = phoneBlurred && field.state.meta.errors.length > 0;
+													return (
+														<div className="space-y-2">
+															<Label htmlFor="phone" className="text-sm font-medium">
+																Telefon
+															</Label>
+															<PhoneInput
+																value={field.state.value}
+																onChange={(phone) => field.handleChange(phone)}
+																onBlur={() => {
+																	setPhoneBlurred(true);
+																	field.handleBlur();
+																}}
+																error={showError}
+																className={inputClassName}
+															/>
+															{showError && (
+																<p className="text-xs text-destructive">{field.state.meta.errors[0]}</p>
+															)}
+														</div>
+													);
+												}}
 											</form.Field>
 										</div>
 									</section>
 
-									{/* Shipping Address */}
-									<section className="bg-white rounded-xl p-6 shadow-sm">
-										<h2 className="text-base font-semibold text-gray-900 mb-5 flex items-center gap-2">
-											<div className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center">
+									{/* Address Section */}
+									<section>
+										<div className="flex items-center gap-3 mb-6">
+											<div className="flex items-center justify-center w-8 h-8 rounded-full bg-foreground text-background text-sm font-medium">
 												2
 											</div>
-											Adresa za dostavu
-										</h2>
+											<h2 className="text-lg font-medium text-foreground">Adresa dostave</h2>
+										</div>
 
 										{/* Saved Addresses */}
 										{isAuthenticated && savedAddresses.length > 0 && (
-											<div className="mb-6">
-												<div className="space-y-2">
-													{savedAddresses
-														.filter(
-															(addr) =>
-																addr.type === "shipping" || !addr.type
-														)
-														.map((address) => (
-															<button
-																key={address.id}
-																type="button"
-																onClick={() =>
-																	handleAddressSelect(address.id)
-																}
-																className={cn(
-																	"w-full text-left p-4 border rounded-lg transition-all",
-																	selectedAddressId === address.id
-																		? "border-gray-900 bg-gray-50"
-																		: "border-gray-200 hover:border-gray-300"
-																)}
-															>
-																<div className="flex items-start gap-3">
-																	<div
-																		className={cn(
-																			"mt-0.5 size-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
-																			selectedAddressId === address.id
-																				? "border-gray-900 bg-gray-900"
-																				: "border-gray-300"
-																		)}
-																	>
-																		{selectedAddressId === address.id && (
-																			<Check className="size-3 text-white" />
-																		)}
-																	</div>
-																	<div className="flex-1 min-w-0">
-																		<div className="flex items-center gap-2">
-																			<span className="font-medium text-gray-900 text-sm">
-																				{[
-																					address.firstName,
-																					address.lastName,
-																				]
-																					.filter(Boolean)
-																					.join(" ") || "Adresa"}
-																			</span>
-																			{address.isDefault && (
-																				<span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-																					Zadano
-																				</span>
-																			)}
-																		</div>
-																		<p className="text-sm text-gray-600 mt-0.5">
-																			{address.address1}
-																			{address.city && `, ${address.city}`}
-																			{address.zip && ` ${address.zip}`}
-																		</p>
-																	</div>
+											<div className="space-y-3 mb-6">
+												{savedAddresses
+													.filter((addr) => addr.type === "shipping" || !addr.type)
+													.map((address) => (
+														<button
+															key={address.id}
+															type="button"
+															onClick={() => handleAddressSelect(address.id)}
+															className={cn(
+																"w-full text-left p-4 rounded-xl border-2 transition-all",
+																selectedAddressId === address.id
+																	? "border-foreground bg-muted/50"
+																	: "border-border hover:border-muted-foreground/50"
+															)}
+														>
+															<div className="flex items-start gap-3">
+																<div
+																	className={cn(
+																		"mt-0.5 size-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors",
+																		selectedAddressId === address.id
+																			? "border-foreground bg-foreground"
+																			: "border-muted-foreground/30"
+																	)}
+																>
+																	{selectedAddressId === address.id && (
+																		<Check className="size-3 text-background" />
+																	)}
 																</div>
-															</button>
-														))}
-
-													<button
-														type="button"
-														onClick={handleNewAddressClick}
-														className={cn(
-															"w-full text-left p-4 border border-dashed rounded-lg transition-all",
-															showNewAddressForm && !selectedAddressId
-																? "border-gray-900 bg-gray-50"
-																: "border-gray-300 hover:border-gray-400"
-														)}
-													>
-														<div className="flex items-center gap-3">
-															<div
-																className={cn(
-																	"size-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
-																	showNewAddressForm && !selectedAddressId
-																		? "border-gray-900 bg-gray-900"
-																		: "border-gray-300"
-																)}
-															>
-																{showNewAddressForm && !selectedAddressId ? (
-																	<Check className="size-3 text-white" />
-																) : (
-																	<Plus className="size-3 text-gray-400" />
-																)}
+																<div className="flex-1 min-w-0">
+																	<div className="flex items-center gap-2">
+																		<span className="font-medium text-foreground">
+																			{[address.firstName, address.lastName].filter(Boolean).join(" ") ||
+																				"Adresa"}
+																		</span>
+																		{address.isDefault && (
+																			<span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
+																				Zadano
+																			</span>
+																		)}
+																	</div>
+																	<p className="text-sm text-muted-foreground mt-1">
+																		{address.address1}
+																		{address.city && `, ${address.city}`}
+																		{address.zip && ` ${address.zip}`}
+																	</p>
+																</div>
 															</div>
-															<span className="font-medium text-gray-700 text-sm">
-																Koristi novu adresu
-															</span>
+														</button>
+													))}
+
+												<button
+													type="button"
+													onClick={handleNewAddressClick}
+													className={cn(
+														"w-full text-left p-4 rounded-xl border-2 border-dashed transition-all",
+														showNewAddressForm && !selectedAddressId
+															? "border-foreground bg-muted/50"
+															: "border-border hover:border-muted-foreground/50"
+													)}
+												>
+													<div className="flex items-center gap-3">
+														<div
+															className={cn(
+																"size-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors",
+																showNewAddressForm && !selectedAddressId
+																	? "border-foreground bg-foreground"
+																	: "border-muted-foreground/30"
+															)}
+														>
+															{showNewAddressForm && !selectedAddressId ? (
+																<Check className="size-3 text-background" />
+															) : (
+																<Plus className="size-3 text-muted-foreground" />
+															)}
 														</div>
-													</button>
-												</div>
+														<span className="font-medium text-muted-foreground">Nova adresa</span>
+													</div>
+												</button>
 											</div>
 										)}
 
@@ -814,38 +821,42 @@ function CheckoutPage() {
 											!selectedAddressId) && (
 											<div className="space-y-4">
 												{isAuthenticated && !selectedAddressId && (
-													<label className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg cursor-pointer">
+													<label className="flex items-center gap-3 cursor-pointer group">
+														<div
+															className={cn(
+																"size-5 rounded border-2 flex items-center justify-center transition-colors",
+																saveAddress
+																	? "border-foreground bg-foreground"
+																	: "border-muted-foreground/30 group-hover:border-muted-foreground/50"
+															)}
+														>
+															{saveAddress && <Check className="size-3 text-background" />}
+														</div>
 														<input
 															type="checkbox"
 															checked={saveAddress}
-															onChange={(e) =>
-																setSaveAddress(e.target.checked)
-															}
-															className="size-4 text-gray-900 rounded"
+															onChange={(e) => setSaveAddress(e.target.checked)}
+															className="sr-only"
 														/>
-														<span className="text-sm text-gray-700">
-															Sačuvaj adresu za buduće narudžbe
+														<span className="text-sm text-muted-foreground">
+															Sačuvaj adresu za sljedeći put
 														</span>
 													</label>
 												)}
 
-												{/* Name Row */}
 												<div className="grid grid-cols-2 gap-4">
 													<form.Field
 														name="name"
 														validators={{
 															onChange: ({ value }) => {
-																const result =
-																	checkoutSchema.shape.name.safeParse(value);
-																return result.success
-																	? undefined
-																	: result.error.issues[0]?.message;
+																const result = checkoutSchema.shape.name.safeParse(value);
+																return result.success ? undefined : result.error.issues[0]?.message;
 															},
 														}}
 													>
 														{(field) => (
-															<div className="space-y-1.5">
-																<Label htmlFor="name" className="text-sm">
+															<div className="space-y-2">
+																<Label htmlFor="name" className="text-sm font-medium">
 																	Ime
 																</Label>
 																<Input
@@ -853,14 +864,11 @@ function CheckoutPage() {
 																	type="text"
 																	value={field.state.value}
 																	onBlur={field.handleBlur}
-																	onChange={(e) =>
-																		field.handleChange(e.target.value)
-																	}
+																	onChange={(e) => field.handleChange(e.target.value)}
 																	placeholder="Ime"
 																	className={cn(
-																		"h-11",
-																		field.state.meta.errors.length > 0 &&
-																			"border-red-500"
+																		inputClassName,
+																		field.state.meta.errors.length > 0 && "border-destructive"
 																	)}
 																/>
 															</div>
@@ -871,19 +879,14 @@ function CheckoutPage() {
 														name="lastName"
 														validators={{
 															onChange: ({ value }) => {
-																const result =
-																	checkoutSchema.shape.lastName.safeParse(
-																		value
-																	);
-																return result.success
-																	? undefined
-																	: result.error.issues[0]?.message;
+																const result = checkoutSchema.shape.lastName.safeParse(value);
+																return result.success ? undefined : result.error.issues[0]?.message;
 															},
 														}}
 													>
 														{(field) => (
-															<div className="space-y-1.5">
-																<Label htmlFor="lastName" className="text-sm">
+															<div className="space-y-2">
+																<Label htmlFor="lastName" className="text-sm font-medium">
 																	Prezime
 																</Label>
 																<Input
@@ -891,14 +894,11 @@ function CheckoutPage() {
 																	type="text"
 																	value={field.state.value}
 																	onBlur={field.handleBlur}
-																	onChange={(e) =>
-																		field.handleChange(e.target.value)
-																	}
+																	onChange={(e) => field.handleChange(e.target.value)}
 																	placeholder="Prezime"
 																	className={cn(
-																		"h-11",
-																		field.state.meta.errors.length > 0 &&
-																			"border-red-500"
+																		inputClassName,
+																		field.state.meta.errors.length > 0 && "border-destructive"
 																	)}
 																/>
 															</div>
@@ -906,71 +906,61 @@ function CheckoutPage() {
 													</form.Field>
 												</div>
 
-												{/* Address */}
 												<form.Field
 													name="address"
 													validators={{
 														onChange: ({ value }) => {
-															const result =
-																checkoutSchema.shape.address.safeParse(value);
-															return result.success
-																? undefined
-																: result.error.issues[0]?.message;
+															const result = checkoutSchema.shape.address.safeParse(value);
+															return result.success ? undefined : result.error.issues[0]?.message;
 														},
 													}}
 												>
 													{(field) => (
-														<div className="space-y-1.5">
-															<Label htmlFor="address" className="text-sm">
-																Ulica i broj
+														<div className="space-y-2">
+															<Label htmlFor="address" className="text-sm font-medium">
+																Adresa
 															</Label>
-															<Input
-																id="address"
-																type="text"
-																value={field.state.value}
-																onBlur={field.handleBlur}
-																onChange={(e) =>
-																	field.handleChange(e.target.value)
-																}
-																placeholder="Ulica i kućni broj"
-																className={cn(
-																	"h-11",
-																	field.state.meta.errors.length > 0 &&
-																		"border-red-500"
-																)}
-															/>
+															<div className="relative">
+																<Home className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+																<Input
+																	id="address"
+																	type="text"
+																	value={field.state.value}
+																	onBlur={field.handleBlur}
+																	onChange={(e) => field.handleChange(e.target.value)}
+																	placeholder="Ulica i broj"
+																	className={cn(
+																		inputClassName,
+																		"pl-10",
+																		field.state.meta.errors.length > 0 && "border-destructive"
+																	)}
+																/>
+															</div>
 														</div>
 													)}
 												</form.Field>
 
-												{/* City and Zip */}
 												<div className="grid grid-cols-2 gap-4">
 													<form.Field
 														name="city"
 														validators={{
 															onChange: ({ value }) => {
-																const result =
-																	checkoutSchema.shape.city.safeParse(value);
-																return result.success
-																	? undefined
-																	: result.error.issues[0]?.message;
+																const result = checkoutSchema.shape.city.safeParse(value);
+																return result.success ? undefined : result.error.issues[0]?.message;
 															},
 														}}
 													>
 														{(field) => (
-															<div className="space-y-1.5">
-																<Label htmlFor="city" className="text-sm">
+															<div className="space-y-2">
+																<Label htmlFor="city" className="text-sm font-medium">
 																	Grad
 																</Label>
 																<CityCombobox
 																	value={field.state.value}
-																	onCityChange={(city) =>
-																		field.handleChange(city)
-																	}
-																	onZipChange={(zip) =>
-																		form.setFieldValue("zip", zip)
-																	}
+																	onCityChange={(city) => field.handleChange(city)}
+																	onZipChange={(zip) => form.setFieldValue("zip", zip)}
 																	error={field.state.meta.errors.length > 0}
+																	className={inputClassName}
 																/>
 															</div>
 														)}
@@ -980,17 +970,14 @@ function CheckoutPage() {
 														name="zip"
 														validators={{
 															onChange: ({ value }) => {
-																const result =
-																	checkoutSchema.shape.zip.safeParse(value);
-																return result.success
-																	? undefined
-																	: result.error.issues[0]?.message;
+																const result = checkoutSchema.shape.zip.safeParse(value);
+																return result.success ? undefined : result.error.issues[0]?.message;
 															},
 														}}
 													>
 														{(field) => (
-															<div className="space-y-1.5">
-																<Label htmlFor="zip" className="text-sm">
+															<div className="space-y-2">
+																<Label htmlFor="zip" className="text-sm font-medium">
 																	Poštanski broj
 																</Label>
 																<Input
@@ -998,14 +985,11 @@ function CheckoutPage() {
 																	type="text"
 																	value={field.state.value}
 																	onBlur={field.handleBlur}
-																	onChange={(e) =>
-																		field.handleChange(e.target.value)
-																	}
+																	onChange={(e) => field.handleChange(e.target.value)}
 																	placeholder="71000"
 																	className={cn(
-																		"h-11",
-																		field.state.meta.errors.length > 0 &&
-																			"border-red-500"
+																		inputClassName,
+																		field.state.meta.errors.length > 0 && "border-destructive"
 																	)}
 																/>
 															</div>
@@ -1016,26 +1000,209 @@ function CheckoutPage() {
 										)}
 									</section>
 
-									{/* Discount Code - Mobile Only */}
-									<section className="bg-white rounded-xl p-6 shadow-sm lg:hidden">
+									{/* Shipping Section */}
+									<section>
+										<div className="flex items-center gap-3 mb-6">
+											<div className="flex items-center justify-center w-8 h-8 rounded-full bg-foreground text-background text-sm font-medium">
+												3
+											</div>
+											<h2 className="text-lg font-medium text-foreground">Dostava</h2>
+										</div>
+
+										{/* Delivery Type Selector */}
+										{hasLocalPickup && (
+											<div className="grid grid-cols-2 gap-3 mb-6">
+												<button
+													type="button"
+													onClick={() => setDeliveryType("shipping")}
+													className={cn(
+														"flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
+														deliveryType === "shipping"
+															? "border-foreground bg-muted/50"
+															: "border-border hover:border-muted-foreground/50"
+													)}
+												>
+													<div
+														className={cn(
+															"w-10 h-10 rounded-full flex items-center justify-center transition-colors",
+															deliveryType === "shipping"
+																? "bg-foreground text-background"
+																: "bg-muted text-muted-foreground"
+														)}
+													>
+														<Truck className="size-5" />
+													</div>
+													<span className="font-medium text-foreground">Dostava na adresu</span>
+												</button>
+
+												<button
+													type="button"
+													onClick={() => setDeliveryType("pickup")}
+													className={cn(
+														"flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
+														deliveryType === "pickup"
+															? "border-foreground bg-muted/50"
+															: "border-border hover:border-muted-foreground/50"
+													)}
+												>
+													<div
+														className={cn(
+															"w-10 h-10 rounded-full flex items-center justify-center transition-colors",
+															deliveryType === "pickup"
+																? "bg-foreground text-background"
+																: "bg-muted text-muted-foreground"
+														)}
+													>
+														<Store className="size-5" />
+													</div>
+													<span className="font-medium text-foreground">Preuzimanje</span>
+												</button>
+											</div>
+										)}
+
+										{/* Local Pickup Info */}
+										{deliveryType === "pickup" && localPickupMethod && (
+											<div className="p-4 rounded-xl border-2 border-foreground bg-muted/50">
+												<div className="flex items-center gap-3">
+													<div className="size-5 rounded-full border-2 border-foreground bg-foreground flex items-center justify-center">
+														<Check className="size-3 text-background" />
+													</div>
+													<Store className="size-4 text-muted-foreground" />
+													<div>
+														<div className="font-medium text-foreground">{localPickupMethod.name}</div>
+														{localPickupMethod.description && (
+															<div className="text-sm text-muted-foreground">
+																{localPickupMethod.description}
+															</div>
+														)}
+													</div>
+												</div>
+											</div>
+										)}
+
+										{/* Shipping Methods - Only show when delivery type is shipping */}
+										{deliveryType === "shipping" && (
+											<>
+												{availableShippingMethods.length === 0 ? (
+													<p className="text-sm text-muted-foreground">Nema dostupnih načina dostave.</p>
+												) : (
+													<form.Field name="shippingMethodId">
+														{(field) => (
+															<div className="space-y-3">
+																{availableShippingMethods.map((method) => {
+																	const methodPrice = parseFloat(method.price || "0");
+																	const minimumAmount = method.minimumOrderAmount
+																		? parseFloat(method.minimumOrderAmount)
+																		: 0;
+																	const isFree = method.isFreeShipping && subtotal >= minimumAmount;
+																	const displayPrice = isFree ? 0 : methodPrice;
+																	const isSelected = field.state.value === method.id;
+
+																	return (
+																		<label
+																			key={method.id}
+																			className={cn(
+																				"flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all",
+																				isSelected
+																					? "border-foreground bg-muted/50"
+																					: "border-border hover:border-muted-foreground/50"
+																			)}
+																		>
+																			<div className="flex items-center gap-3">
+																				<div
+																					className={cn(
+																						"size-5 rounded-full border-2 flex items-center justify-center transition-colors",
+																						isSelected
+																							? "border-foreground bg-foreground"
+																							: "border-muted-foreground/30"
+																					)}
+																				>
+																					{isSelected && <Check className="size-3 text-background" />}
+																				</div>
+																				<Truck className="size-4 text-muted-foreground" />
+																				<div>
+																					<div className="font-medium text-foreground">{method.name}</div>
+																					{method.description && (
+																						<div className="text-sm text-muted-foreground">
+																							{method.description}
+																						</div>
+																					)}
+																				</div>
+																			</div>
+																			<div className="text-right">
+																				{isFree ? (
+																					<span className="font-semibold text-emerald-600">Besplatno</span>
+																				) : (
+																					<span className="font-semibold text-foreground">
+																						{displayPrice.toFixed(2)} KM
+																					</span>
+																				)}
+																			</div>
+																			<input
+																				type="radio"
+																				name="shippingMethod"
+																				value={method.id}
+																				checked={isSelected}
+																				onChange={(e) => {
+																					field.handleChange(e.target.value);
+																					setSelectedShippingMethodId(e.target.value);
+																				}}
+																				className="sr-only"
+																			/>
+																</label>
+															);
+														})}
+													</div>
+												)}
+											</form.Field>
+										)}
+									</>
+								)}
+									</section>
+
+									{/* Payment Section */}
+									<section>
+										<div className="flex items-center gap-3 mb-6">
+											<div className="flex items-center justify-center w-8 h-8 rounded-full bg-foreground text-background text-sm font-medium">
+												4
+											</div>
+											<h2 className="text-lg font-medium text-foreground">Plaćanje</h2>
+										</div>
+
+										<div className="p-4 rounded-xl border-2 border-foreground bg-muted/50">
+											<div className="flex items-center gap-3">
+												<div className="size-5 rounded-full border-2 border-foreground bg-foreground flex items-center justify-center">
+													<Check className="size-3 text-background" />
+												</div>
+												<Wallet className="size-4 text-muted-foreground" />
+												<div>
+													<div className="font-medium text-foreground">Plaćanje pouzećem</div>
+													<div className="text-sm text-muted-foreground">
+														Platite prilikom preuzimanja
+													</div>
+												</div>
+											</div>
+										</div>
+									</section>
+
+									{/* Discount Code - Mobile */}
+									<section className="lg:hidden">
 										<div className="flex items-center gap-2 mb-4">
-											<Tag className="size-4 text-gray-500" />
-											<span className="text-base font-semibold text-gray-900">
-												Kod za popust
-											</span>
+											<Tag className="size-4 text-muted-foreground" />
+											<span className="font-medium text-foreground">Kod za popust</span>
 										</div>
 										{appliedDiscount ? (
-											<div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
+											<div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl">
 												<div className="flex items-center gap-2">
 													<Check className="size-4 text-emerald-600" />
-													<span className="text-sm font-medium text-emerald-700">
+													<span className="font-medium text-emerald-700 dark:text-emerald-400">
 														{appliedDiscount.code}
 													</span>
 												</div>
 												<button
 													type="button"
 													onClick={removeDiscount}
-													className="text-gray-500 hover:text-gray-700"
+													className="text-muted-foreground hover:text-foreground transition-colors"
 												>
 													<X className="size-4" />
 												</button>
@@ -1046,175 +1213,31 @@ function CheckoutPage() {
 													value={discountCode}
 													onChange={(e) => setDiscountCode(e.target.value)}
 													placeholder="Unesite kod"
-													className={cn(
-														"h-11 flex-1",
-														discountError && "border-red-500"
-													)}
+													className={cn(inputClassName, "flex-1", discountError && "border-destructive")}
 												/>
 												<Button
 													type="button"
 													variant="outline"
 													onClick={handleApplyDiscount}
 													disabled={discountLoading}
-													className="h-11 px-4"
+													className="h-12 px-6"
 												>
-													{discountLoading ? (
-														<Loader2 className="size-4 animate-spin" />
-													) : (
-														"Primjeni"
-													)}
+													{discountLoading ? <Loader2 className="size-4 animate-spin" /> : "Primjeni"}
 												</Button>
 											</div>
 										)}
-										{discountError && (
-											<p className="text-xs text-red-500 mt-2">
-												{discountError}
-											</p>
-										)}
-									</section>
-
-									{/* Shipping Method */}
-									<section className="bg-white rounded-xl p-6 shadow-sm">
-										<h2 className="text-base font-semibold text-gray-900 mb-5 flex items-center gap-2">
-											<div className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center">
-												3
-											</div>
-											<Truck className="size-4" />
-											Dostava
-										</h2>
-
-										{availableShippingMethods.length === 0 ? (
-											<p className="text-sm text-gray-500">
-												Nema dostupnih načina dostave.
-											</p>
-										) : (
-											<form.Field name="shippingMethodId">
-												{(field) => (
-													<div className="space-y-2">
-														{availableShippingMethods.map((method) => {
-															const methodPrice = parseFloat(
-																method.price || "0"
-															);
-															const minimumAmount = method.minimumOrderAmount
-																? parseFloat(method.minimumOrderAmount)
-																: 0;
-															const isFree =
-																method.isFreeShipping &&
-																subtotal >= minimumAmount;
-															const displayPrice = isFree ? 0 : methodPrice;
-															const isSelected =
-																field.state.value === method.id;
-
-															return (
-																<label
-																	key={method.id}
-																	className={cn(
-																		"flex items-center justify-between p-4 border rounded-lg cursor-pointer transition-all",
-																		isSelected
-																			? "border-gray-900 bg-gray-50"
-																			: "border-gray-200 hover:border-gray-300"
-																	)}
-																>
-																	<div className="flex items-center gap-3">
-																		<div
-																			className={cn(
-																				"size-5 rounded-full border-2 flex items-center justify-center",
-																				isSelected
-																					? "border-gray-900 bg-gray-900"
-																					: "border-gray-300"
-																			)}
-																		>
-																			{isSelected && (
-																				<Check className="size-3 text-white" />
-																			)}
-																		</div>
-																		<div>
-																			<div className="font-medium text-gray-900 text-sm">
-																				{method.name}
-																			</div>
-																			{method.description && (
-																				<div className="text-xs text-gray-500 mt-0.5">
-																					{method.description}
-																				</div>
-																			)}
-																		</div>
-																	</div>
-																	<div className="text-right">
-																		{isFree ? (
-																			<span className="font-semibold text-emerald-600 text-sm">
-																				Besplatno
-																			</span>
-																		) : (
-																			<span className="font-semibold text-gray-900 text-sm">
-																				{displayPrice.toFixed(2)} KM
-																			</span>
-																		)}
-																	</div>
-																	<input
-																		type="radio"
-																		name="shippingMethod"
-																		value={method.id}
-																		checked={isSelected}
-																		onChange={(e) => {
-																			field.handleChange(e.target.value);
-																			setSelectedShippingMethodId(
-																				e.target.value
-																			);
-																		}}
-																		className="sr-only"
-																	/>
-																</label>
-															);
-														})}
-													</div>
-												)}
-											</form.Field>
-										)}
-									</section>
-
-									{/* Payment Method */}
-									<section className="bg-white rounded-xl p-6 shadow-sm">
-										<h2 className="text-base font-semibold text-gray-900 mb-5 flex items-center gap-2">
-											<div className="w-6 h-6 rounded-full bg-gray-900 text-white text-xs flex items-center justify-center">
-												4
-											</div>
-											<CreditCard className="size-4" />
-											Plaćanje
-										</h2>
-
-										<div className="p-4 border border-gray-900 rounded-lg bg-gray-50">
-											<div className="flex items-center gap-3">
-												<div className="size-5 rounded-full border-2 border-gray-900 bg-gray-900 flex items-center justify-center">
-													<Check className="size-3 text-white" />
-												</div>
-												<div>
-													<div className="font-medium text-gray-900 text-sm">
-														Plaćanje pouzećem
-													</div>
-													<div className="text-xs text-gray-500 mt-0.5">
-														Platite prilikom preuzimanja paketa
-													</div>
-												</div>
-											</div>
-										</div>
+										{discountError && <p className="text-xs text-destructive mt-2">{discountError}</p>}
 									</section>
 
 									{/* Submit Button */}
-									<div>
-										<form.Subscribe
-											selector={(state) => [
-												state.isSubmitting,
-												state.canSubmit,
-											]}
-										>
+									<div className="pt-4">
+										<form.Subscribe selector={(state) => [state.isSubmitting, state.canSubmit]}>
 											{([formIsSubmitting, canSubmit]) => (
 												<Button
 													type="submit"
 													size="lg"
-													disabled={
-														formIsSubmitting || !canSubmit || isSubmitting
-													}
-													className="w-full h-12 text-base font-medium"
+													disabled={formIsSubmitting || !canSubmit || isSubmitting}
+													className="w-full h-14 text-base font-semibold"
 												>
 													{formIsSubmitting || isSubmitting ? (
 														<>
@@ -1222,7 +1245,7 @@ function CheckoutPage() {
 															Procesiranje...
 														</>
 													) : (
-														`Potvrdi narudžbu - ${total.toFixed(2)} KM`
+														"Potvrdi narudžbu"
 													)}
 												</Button>
 											)}
@@ -1233,9 +1256,9 @@ function CheckoutPage() {
 
 							{/* Order Summary - Desktop */}
 							<div className="hidden lg:block lg:col-span-5">
-								<div className="bg-white rounded-xl p-6 shadow-sm sticky top-24">
-									<h2 className="text-base font-semibold text-gray-900 mb-5">
-										Pregled narudžbe ({itemCount})
+								<div className="sticky top-24">
+									<h2 className="text-lg font-medium text-foreground mb-6">
+										Narudžba ({itemCount})
 									</h2>
 
 									{/* Items */}
@@ -1245,47 +1268,43 @@ function CheckoutPage() {
 												item.variant?.price || item.product?.price || "0"
 											);
 											const variantLabel =
-												item.variantOptions &&
-												item.variantOptions.length > 0
-													? item.variantOptions
-															.map((opt) => opt.optionValue)
-															.join(" / ")
+												item.variantOptions && item.variantOptions.length > 0
+													? item.variantOptions.map((opt) => opt.optionValue).join(" / ")
 													: null;
 
 											return (
-												<div
-													key={item.id}
-													className="flex gap-3"
-												>
-													<div className="relative w-16 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
-														{item.image ? (
-															<ProxyImage
-																src={item.image}
-																alt={item.product?.name || "Product"}
-																width={64}
-																height={80}
-																resizingType="fill"
-																className="w-full h-full object-cover"
-															/>
-														) : (
-															<div className="w-full h-full flex items-center justify-center">
-																<ShoppingBag className="size-5 text-gray-300" />
-															</div>
-														)}
-														<span className="absolute -top-1 -right-1 w-5 h-5 bg-gray-900 text-white text-xs rounded-full flex items-center justify-center">
+												<div key={item.id} className="flex gap-4">
+													<div className="relative flex-shrink-0">
+														<div className="w-16 h-16 rounded-lg overflow-hidden bg-muted">
+															{item.image ? (
+																<ProxyImage
+																	src={item.image}
+																	alt={item.product?.name || "Product"}
+																	width={64}
+																	height={64}
+																	resizingType="fill"
+																	className="w-full h-full object-cover"
+																/>
+															) : (
+																<div className="w-full h-full flex items-center justify-center">
+																	<ShoppingBag className="size-5 text-muted-foreground" />
+																</div>
+															)}
+														</div>
+														<span className="absolute -top-1 -right-1 z-10 w-5 h-5 bg-foreground text-background text-xs rounded-full flex items-center justify-center font-medium">
 															{item.quantity}
 														</span>
 													</div>
 													<div className="flex-1 min-w-0">
-														<div className="font-medium text-gray-900 text-sm line-clamp-2">
+														<div className="font-medium text-foreground line-clamp-2">
 															{item.product?.name || "Proizvod"}
 														</div>
 														{variantLabel && (
-															<div className="text-xs text-gray-500 mt-0.5">
+															<div className="text-sm text-muted-foreground mt-0.5">
 																{variantLabel}
 															</div>
 														)}
-														<div className="text-sm font-semibold text-gray-900 mt-1">
+														<div className="font-semibold text-foreground mt-1">
 															{(price * item.quantity).toFixed(2)} KM
 														</div>
 													</div>
@@ -1295,25 +1314,23 @@ function CheckoutPage() {
 									</div>
 
 									{/* Discount Code */}
-									<div className="border-t border-gray-100 pt-4 mb-4">
-										<div className="flex items-center gap-2 mb-2">
-											<Tag className="size-4 text-gray-500" />
-											<span className="text-sm font-medium text-gray-700">
-												Kod za popust
-											</span>
+									<div className="py-6 border-t border-border">
+										<div className="flex items-center gap-2 mb-3">
+											<Tag className="size-4 text-muted-foreground" />
+											<span className="text-sm font-medium text-foreground">Kod za popust</span>
 										</div>
 										{appliedDiscount ? (
-											<div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
+											<div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl">
 												<div className="flex items-center gap-2">
 													<Check className="size-4 text-emerald-600" />
-													<span className="text-sm font-medium text-emerald-700">
+													<span className="font-medium text-emerald-700 dark:text-emerald-400">
 														{appliedDiscount.code}
 													</span>
 												</div>
 												<button
 													type="button"
 													onClick={removeDiscount}
-													className="text-gray-500 hover:text-gray-700"
+													className="text-muted-foreground hover:text-foreground transition-colors"
 												>
 													<X className="size-4" />
 												</button>
@@ -1324,48 +1341,33 @@ function CheckoutPage() {
 													value={discountCode}
 													onChange={(e) => setDiscountCode(e.target.value)}
 													placeholder="Unesite kod"
-													className={cn(
-														"h-10 flex-1",
-														discountError && "border-red-500"
-													)}
+													className={cn(inputClassName, "flex-1", discountError && "border-destructive")}
 												/>
 												<Button
 													type="button"
 													variant="outline"
 													onClick={handleApplyDiscount}
 													disabled={discountLoading}
-													className="h-10 px-4"
+													className="h-12 px-5"
 												>
-													{discountLoading ? (
-														<Loader2 className="size-4 animate-spin" />
-													) : (
-														"Primjeni"
-													)}
+													{discountLoading ? <Loader2 className="size-4 animate-spin" /> : "Primjeni"}
 												</Button>
 											</div>
 										)}
-										{discountError && (
-											<p className="text-xs text-red-500 mt-1">
-												{discountError}
-											</p>
-										)}
+										{discountError && <p className="text-xs text-destructive mt-2">{discountError}</p>}
 									</div>
 
 									{/* Totals */}
-									<div className="border-t border-gray-100 pt-4 space-y-2">
+									<div className="py-6 border-t border-border space-y-3">
 										<div className="flex justify-between text-sm">
-											<span className="text-gray-600">Međuzbir</span>
-											<span className="text-gray-900">
-												{subtotal.toFixed(2)} KM
-											</span>
+											<span className="text-muted-foreground">Međuzbir</span>
+											<span className="text-foreground">{subtotal.toFixed(2)} KM</span>
 										</div>
 										<div className="flex justify-between text-sm">
-											<span className="text-gray-600">Dostava</span>
-											<span className="text-gray-900">
+											<span className="text-muted-foreground">Dostava</span>
+											<span className="text-foreground">
 												{shippingCost === 0 ? (
-													<span className="text-emerald-600 font-medium">
-														Besplatno
-													</span>
+													<span className="text-emerald-600 font-medium">Besplatno</span>
 												) : (
 													`${shippingCost.toFixed(2)} KM`
 												)}
@@ -1373,18 +1375,19 @@ function CheckoutPage() {
 										</div>
 										{appliedDiscount && (
 											<div className="flex justify-between text-sm">
-												<span className="text-gray-600">Popust</span>
+												<span className="text-muted-foreground">Popust</span>
 												<span className="text-emerald-600 font-medium">
 													-{discountAmount.toFixed(2)} KM
 												</span>
 											</div>
 										)}
-										<div className="flex justify-between text-lg font-semibold pt-3 border-t border-gray-100">
-											<span className="text-gray-900">Ukupno</span>
-											<span className="text-gray-900">
-												{total.toFixed(2)} KM
-											</span>
-										</div>
+									</div>
+
+									<div className="flex justify-between items-center pt-6 border-t border-border">
+										<span className="text-lg font-semibold text-foreground">Ukupno</span>
+										<span className="text-2xl font-bold text-foreground">
+											{total.toFixed(2)} KM
+										</span>
 									</div>
 								</div>
 							</div>
@@ -1393,76 +1396,65 @@ function CheckoutPage() {
 				</div>
 
 				{/* Mobile Order Summary */}
-				<div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40">
-					{/* Collapsible Summary */}
+				<div className="lg:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border z-40">
 					{showOrderSummary && (
-						<div className="border-b border-gray-100 max-h-[50vh] overflow-y-auto">
+						<div className="border-b border-border max-h-[50vh] overflow-y-auto">
 							<div className="p-4 space-y-4">
-								{/* Items */}
 								{items.map((item) => {
-									const price = parseFloat(
-										item.variant?.price || item.product?.price || "0"
-									);
+									const price = parseFloat(item.variant?.price || item.product?.price || "0");
 									const variantLabel =
 										item.variantOptions && item.variantOptions.length > 0
-											? item.variantOptions
-													.map((opt) => opt.optionValue)
-													.join(" / ")
+											? item.variantOptions.map((opt) => opt.optionValue).join(" / ")
 											: null;
 
 									return (
 										<div key={item.id} className="flex gap-3">
-											<div className="relative w-12 h-15 flex-shrink-0 rounded-md overflow-hidden bg-gray-100">
-												{item.image ? (
-													<ProxyImage
-														src={item.image}
-														alt={item.product?.name || "Product"}
-														width={48}
-														height={60}
-														resizingType="fill"
-														className="w-full h-full object-cover"
-													/>
-												) : (
-													<div className="w-full h-full flex items-center justify-center">
-														<ShoppingBag className="size-4 text-gray-300" />
-													</div>
-												)}
-												<span className="absolute -top-1 -right-1 w-4 h-4 bg-gray-900 text-white text-[10px] rounded-full flex items-center justify-center">
+											<div className="relative flex-shrink-0">
+												<div className="w-12 h-12 rounded-lg overflow-hidden bg-muted">
+													{item.image ? (
+														<ProxyImage
+															src={item.image}
+															alt={item.product?.name || "Product"}
+															width={48}
+															height={48}
+															resizingType="fill"
+															className="w-full h-full object-cover"
+														/>
+													) : (
+														<div className="w-full h-full flex items-center justify-center">
+															<ShoppingBag className="size-4 text-muted-foreground" />
+														</div>
+													)}
+												</div>
+												<span className="absolute -top-1 -right-1 z-10 w-4 h-4 bg-foreground text-background text-[10px] rounded-full flex items-center justify-center font-medium">
 													{item.quantity}
 												</span>
 											</div>
 											<div className="flex-1 min-w-0">
-												<div className="font-medium text-gray-900 text-xs line-clamp-1">
+												<div className="font-medium text-foreground text-sm line-clamp-1">
 													{item.product?.name || "Proizvod"}
 												</div>
 												{variantLabel && (
-													<div className="text-xs text-gray-500">
-														{variantLabel}
-													</div>
+													<div className="text-xs text-muted-foreground">{variantLabel}</div>
 												)}
 											</div>
-											<div className="text-xs font-semibold text-gray-900">
+											<div className="text-sm font-semibold text-foreground">
 												{(price * item.quantity).toFixed(2)} KM
 											</div>
 										</div>
 									);
 								})}
 
-								{/* Totals */}
-								<div className="pt-3 border-t border-gray-100 space-y-1">
+								<div className="pt-4 border-t border-border space-y-2">
 									<div className="flex justify-between text-sm">
-										<span className="text-gray-600">Međuzbir</span>
-										<span className="text-gray-900">
-											{subtotal.toFixed(2)} KM
-										</span>
+										<span className="text-muted-foreground">Međuzbir</span>
+										<span className="text-foreground">{subtotal.toFixed(2)} KM</span>
 									</div>
 									<div className="flex justify-between text-sm">
-										<span className="text-gray-600">Dostava</span>
-										<span className="text-gray-900">
+										<span className="text-muted-foreground">Dostava</span>
+										<span className="text-foreground">
 											{shippingCost === 0 ? (
-												<span className="text-emerald-600 font-medium">
-													Besplatno
-												</span>
+												<span className="text-emerald-600 font-medium">Besplatno</span>
 											) : (
 												`${shippingCost.toFixed(2)} KM`
 											)}
@@ -1470,7 +1462,7 @@ function CheckoutPage() {
 									</div>
 									{appliedDiscount && (
 										<div className="flex justify-between text-sm">
-											<span className="text-gray-600">Popust</span>
+											<span className="text-muted-foreground">Popust</span>
 											<span className="text-emerald-600 font-medium">
 												-{discountAmount.toFixed(2)} KM
 											</span>
@@ -1481,35 +1473,30 @@ function CheckoutPage() {
 						</div>
 					)}
 
-					{/* Fixed Bottom Bar */}
 					<div className="px-4 py-3 safe-area-bottom">
-						{/* Toggle Summary */}
 						<button
 							type="button"
 							onClick={() => setShowOrderSummary(!showOrderSummary)}
 							className="flex items-center justify-between w-full"
 						>
 							<div className="flex items-center gap-2">
-								<ShoppingBag className="size-4 text-gray-500" />
-								<span className="text-sm font-medium text-gray-700">
-									{showOrderSummary ? "Sakrij" : "Prikaži"} narudžbu ({itemCount})
+								<ShoppingBag className="size-4 text-muted-foreground" />
+								<span className="text-sm font-medium text-foreground">
+									{showOrderSummary ? "Sakrij" : "Prikaži"} ({itemCount})
 								</span>
 								<ChevronDown
 									className={cn(
-										"size-4 text-gray-500 transition-transform",
+										"size-4 text-muted-foreground transition-transform",
 										showOrderSummary && "rotate-180"
 									)}
 								/>
 							</div>
-							<span className="text-lg font-semibold text-gray-900">
-								{total.toFixed(2)} KM
-							</span>
+							<span className="text-lg font-bold text-foreground">{total.toFixed(2)} KM</span>
 						</button>
 					</div>
 				</div>
 
-				{/* Bottom padding for mobile sticky bar */}
-				<div className="h-40 lg:hidden" />
+				<div className="h-24 lg:hidden" />
 			</main>
 		</ShopLayout>
 	);

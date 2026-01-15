@@ -14,7 +14,7 @@ export const getUserAddressesServerFn = createServerFn({ method: "GET" })
     const userEmail = context.user.email;
 
     // Find customer by email
-    const customer = await db.customer.findFirst({
+    const customer = await db.customers.findFirst({
       where: { email: userEmail },
     });
 
@@ -23,7 +23,7 @@ export const getUserAddressesServerFn = createServerFn({ method: "GET" })
     }
 
     // Fetch addresses for this customer (not order addresses)
-    const customerAddresses = await db.address.findMany({
+    const customerAddresses = await db.addresses.findMany({
       where: {
         customerId: customer.id,
         orderId: null, // Only customer addresses, not order addresses
@@ -65,7 +65,7 @@ export const createUserAddressServerFn = createServerFn({ method: "POST" })
     const userEmail = context.user.email;
 
     // Find customer by email
-    const customer = await db.customer.findFirst({
+    const customer = await db.customers.findFirst({
       where: { email: userEmail },
     });
 
@@ -75,7 +75,7 @@ export const createUserAddressServerFn = createServerFn({ method: "POST" })
 
     // If this is set as default, unset other defaults of the same type
     if (data.isDefault) {
-      await db.address.updateMany({
+      await db.addresses.updateMany({
         where: {
           customerId: customer.id,
           type: data.type,
@@ -86,7 +86,7 @@ export const createUserAddressServerFn = createServerFn({ method: "POST" })
 
     // Create new address
     const addressId = nanoid();
-    const createdAddress = await db.address.create({
+    const createdAddress = await db.addresses.create({
       data: {
         id: addressId,
         customerId: customer.id,
@@ -143,7 +143,7 @@ export const updateUserAddressServerFn = createServerFn({ method: "POST" })
     const { addressId, ...updateData } = data;
 
     // Find customer by email
-    const customer = await db.customer.findFirst({
+    const customer = await db.customers.findFirst({
       where: { email: userEmail },
     });
 
@@ -152,7 +152,7 @@ export const updateUserAddressServerFn = createServerFn({ method: "POST" })
     }
 
     // Verify address belongs to customer
-    const existingAddress = await db.address.findFirst({
+    const existingAddress = await db.addresses.findFirst({
       where: {
         id: addressId,
         customerId: customer.id,
@@ -166,7 +166,7 @@ export const updateUserAddressServerFn = createServerFn({ method: "POST" })
     // If setting as default, unset other defaults of the same type
     if (updateData.isDefault) {
       const addressType = updateData.type || existingAddress.type;
-      await db.address.updateMany({
+      await db.addresses.updateMany({
         where: {
           customerId: customer.id,
           type: addressType,
@@ -177,7 +177,7 @@ export const updateUserAddressServerFn = createServerFn({ method: "POST" })
     }
 
     // Update address
-    const updatedAddress = await db.address.update({
+    const updatedAddress = await db.addresses.update({
       where: { id: addressId },
       data: {
         ...updateData,
@@ -206,7 +206,7 @@ export const deleteUserAddressServerFn = createServerFn({ method: "POST" })
     const userEmail = context.user.email;
 
     // Find customer by email
-    const customer = await db.customer.findFirst({
+    const customer = await db.customers.findFirst({
       where: { email: userEmail },
     });
 
@@ -215,7 +215,7 @@ export const deleteUserAddressServerFn = createServerFn({ method: "POST" })
     }
 
     // Verify address belongs to customer
-    const existingAddress = await db.address.findFirst({
+    const existingAddress = await db.addresses.findFirst({
       where: {
         id: data.addressId,
         customerId: customer.id,
@@ -227,7 +227,7 @@ export const deleteUserAddressServerFn = createServerFn({ method: "POST" })
     }
 
     // Delete address
-    await db.address.delete({
+    await db.addresses.delete({
       where: { id: data.addressId },
     });
 

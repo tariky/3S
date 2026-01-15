@@ -11,20 +11,27 @@ import {
 } from "@/queries/wishlist";
 import { useCartSession } from "@/hooks/useCartSession";
 import { toast } from "sonner";
+import { useFlyToCartSafe } from "./FlyToCartProvider";
 
 interface WishlistButtonProps {
 	productId: string;
 	className?: string;
 	size?: "sm" | "md" | "lg";
+	imageUrl?: string | null;
+	imageRef?: React.RefObject<HTMLElement>;
 }
 
 export function WishlistButton({
 	productId,
 	className,
 	size = "md",
+	imageUrl,
+	imageRef,
 }: WishlistButtonProps) {
 	const { sessionId } = useCartSession();
 	const queryClient = useQueryClient();
+	const buttonRef = React.useRef<HTMLButtonElement>(null);
+	const flyToCart = useFlyToCartSafe();
 
 	// Get all wishlisted product IDs for quick lookup
 	const { data: wishlistData } = useQuery(
@@ -33,6 +40,15 @@ export function WishlistButton({
 
 	const isInWishlist = wishlistData?.productIds?.includes(productId) ?? false;
 
+	const handleFlyAnimation = React.useCallback(() => {
+		if (flyToCart?.triggerFlyToWishlist && imageUrl) {
+			const startElement = imageRef?.current || buttonRef.current;
+			if (startElement) {
+				flyToCart.triggerFlyToWishlist(imageUrl, startElement);
+			}
+		}
+	}, [flyToCart, imageUrl, imageRef]);
+
 	const toggleMutation = useMutation({
 		mutationFn: async () => {
 			return await toggleWishlistServerFn({
@@ -40,13 +56,11 @@ export function WishlistButton({
 			});
 		},
 		onSuccess: (data) => {
-			queryClient.invalidateQueries({ queryKey: [WISHLIST_QUERY_KEY] });
-
+			// Only trigger animation when ADDING to wishlist
 			if (data.isInWishlist) {
-				toast.success("Dodano u listu želja");
-			} else {
-				toast.success("Uklonjeno iz liste želja");
+				handleFlyAnimation();
 			}
+			queryClient.invalidateQueries({ queryKey: [WISHLIST_QUERY_KEY] });
 		},
 		onError: () => {
 			toast.error("Greška pri ažuriranju liste želja");
@@ -73,6 +87,7 @@ export function WishlistButton({
 
 	return (
 		<button
+			ref={buttonRef}
 			onClick={handleClick}
 			disabled={toggleMutation.isPending}
 			className={cn(

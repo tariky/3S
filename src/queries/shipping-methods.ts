@@ -21,14 +21,14 @@ export const getShippingMethodsServerFn = createServerFn({ method: "POST" })
       ? { name: { contains: search } }
       : undefined;
 
-    const response = await db.shippingMethod.findMany({
+    const response = await db.shipping_methods.findMany({
       where: whereCondition,
       orderBy: { position: "asc" },
       take: limit,
       skip: (page - 1) * limit,
     });
 
-    const totalCount = await db.shippingMethod.count({
+    const totalCount = await db.shipping_methods.count({
       where: whereCondition,
     });
 
@@ -53,6 +53,7 @@ export const createShippingMethodServerFn = createServerFn({ method: "POST" })
       description: z.string().optional(),
       price: z.number().optional(),
       isFreeShipping: z.boolean().optional(),
+      isLocalPickup: z.boolean().optional(),
       minimumOrderAmount: z.number().optional().nullable(),
       active: z.boolean().optional(),
       position: z.number().optional(),
@@ -61,13 +62,14 @@ export const createShippingMethodServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const methodId = nanoid();
 
-    const method = await db.shippingMethod.create({
+    const method = await db.shipping_methods.create({
       data: {
         id: methodId,
         name: data.name,
         description: data.description || null,
         price: data.price?.toString() || "0",
         isFreeShipping: data.isFreeShipping ?? false,
+        isLocalPickup: data.isLocalPickup ?? false,
         minimumOrderAmount: data.minimumOrderAmount?.toString() || null,
         active: data.active ?? true,
         position: data.position ?? 0,
@@ -85,19 +87,21 @@ export const updateShippingMethodServerFn = createServerFn({ method: "POST" })
       description: z.string().optional().nullable(),
       price: z.number().optional(),
       isFreeShipping: z.boolean().optional(),
+      isLocalPickup: z.boolean().optional(),
       minimumOrderAmount: z.number().optional().nullable(),
       active: z.boolean().optional(),
       position: z.number().optional(),
     })
   )
   .handler(async ({ data }) => {
-    const method = await db.shippingMethod.update({
+    const method = await db.shipping_methods.update({
       where: { id: data.id },
       data: {
         name: data.name,
         description: data.description ?? null,
         price: data.price?.toString() || "0",
         isFreeShipping: data.isFreeShipping ?? false,
+        isLocalPickup: data.isLocalPickup ?? false,
         minimumOrderAmount: data.minimumOrderAmount?.toString() || null,
         active: data.active ?? true,
         position: data.position ?? 0,
@@ -114,7 +118,7 @@ export const deleteShippingMethodServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    await db.shippingMethod.delete({
+    await db.shipping_methods.delete({
       where: { id: data.id },
     });
     return {
@@ -153,7 +157,7 @@ export const getActiveShippingMethodsServerFn = createServerFn({
 })
   .inputValidator(z.object({}))
   .handler(async () => {
-    const methods = await db.shippingMethod.findMany({
+    const methods = await db.shipping_methods.findMany({
       where: { active: true },
       orderBy: { position: "asc" },
     });

@@ -23,7 +23,19 @@ import {
 } from "@/components/ui/card";
 import { ColorPicker, BG_COLORS, TEXT_COLORS } from "@/components/ui/color-picker";
 import { IconPicker, renderIcon } from "@/components/ui/icon-picker";
-import { Loader2, Upload, X, RefreshCw, CheckCircle2, XCircle, Database, Sparkles } from "lucide-react";
+import { Loader2, Upload, X, RefreshCw, CheckCircle2, XCircle, Database, Sparkles, Check, Eye } from "lucide-react";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+	Dialog,
+	DialogContent,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { ProxyImage } from "@/components/ui/proxy-image";
 import {
@@ -69,6 +81,12 @@ function ShopSettingsPage() {
 			alertTextColor: "text-white",
 			productShippingInfo: "",
 			productPaymentInfo: "",
+			pickupLocationUrl: "",
+			pickupLocationAddress: "",
+			emailLogo: "",
+			emailLogoWidth: 150,
+			emailButtonBgColor: "#2563eb",
+			emailButtonTextColor: "#ffffff",
 		},
 		onSubmit: async ({ value }) => {
 			await updateMutation.mutateAsync(value);
@@ -93,6 +111,12 @@ function ShopSettingsPage() {
 			form.setFieldValue("alertTextColor", settings.alertTextColor);
 			form.setFieldValue("productShippingInfo", settings.productShippingInfo);
 			form.setFieldValue("productPaymentInfo", settings.productPaymentInfo);
+			form.setFieldValue("pickupLocationUrl", settings.pickupLocationUrl);
+			form.setFieldValue("pickupLocationAddress", settings.pickupLocationAddress);
+			form.setFieldValue("emailLogo", settings.emailLogo);
+			form.setFieldValue("emailLogoWidth", settings.emailLogoWidth);
+			form.setFieldValue("emailButtonBgColor", settings.emailButtonBgColor);
+			form.setFieldValue("emailButtonTextColor", settings.emailButtonTextColor);
 		}
 	}, [settings]);
 
@@ -476,6 +500,163 @@ function ShopSettingsPage() {
 								</div>
 							)}
 						</form.Field>
+					</CardContent>
+				</Card>
+
+				{/* Local Pickup Location Section */}
+				<Card>
+					<CardHeader>
+						<CardTitle>Lokacija za osobno preuzimanje</CardTitle>
+						<CardDescription>
+							Adresa i Google Maps link za kupce koji biraju osobno preuzimanje
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="flex flex-col gap-4">
+						<form.Field name="pickupLocationAddress">
+							{(field) => (
+								<div className="flex flex-col gap-2">
+									<Label htmlFor={field.name}>Adresa za preuzimanje</Label>
+									<Input
+										id={field.name}
+										value={field.state.value}
+										onChange={(e) => field.handleChange(e.target.value)}
+										onBlur={field.handleBlur}
+										placeholder="Ulica i broj, Grad, Poštanski broj"
+										maxLength={500}
+									/>
+									<span className="text-xs text-muted-foreground">
+										Ova adresa će se prikazati u email-u za osobno preuzimanje
+									</span>
+								</div>
+							)}
+						</form.Field>
+
+						<form.Field name="pickupLocationUrl">
+							{(field) => (
+								<div className="flex flex-col gap-2">
+									<Label htmlFor={field.name}>Google Maps link</Label>
+									<Input
+										id={field.name}
+										value={field.state.value}
+										onChange={(e) => field.handleChange(e.target.value)}
+										onBlur={field.handleBlur}
+										placeholder="https://maps.google.com/..."
+										type="url"
+									/>
+									<span className="text-xs text-muted-foreground">
+										Link na Google Maps lokaciju vaše poslovnice. Kopirajte iz Google Maps aplikacije.
+									</span>
+								</div>
+							)}
+						</form.Field>
+					</CardContent>
+				</Card>
+
+				{/* Email Settings Section */}
+				<Card>
+					<CardHeader>
+						<div className="flex items-center justify-between">
+							<div>
+								<CardTitle>Postavke emailova</CardTitle>
+								<CardDescription>
+									Logo i izgled dugmadi u transakcijskim emailovima
+								</CardDescription>
+							</div>
+							<EmailPreviewDialog
+								logoUrl={form.state.values.emailLogo}
+								logoWidth={form.state.values.emailLogoWidth}
+								buttonBgColor={form.state.values.emailButtonBgColor}
+								buttonTextColor={form.state.values.emailButtonTextColor}
+								shopTitle={form.state.values.shopTitle}
+							/>
+						</div>
+					</CardHeader>
+					<CardContent className="flex flex-col gap-4">
+						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+							<form.Field name="emailLogo">
+								{(field) => (
+									<div className="flex flex-col gap-2">
+										<Label>Logo za emailove (PNG ili JPG)</Label>
+										<p className="text-sm text-muted-foreground">
+											Email klijenti ne podržavaju SVG. Uploadajte PNG ili JPG verziju loga.
+										</p>
+										<ImageUploadField
+											value={field.state.value}
+											onChange={(url) => field.handleChange(url)}
+											placeholder="Upload logo (PNG, JPG)"
+											acceptSvg={false}
+										/>
+									</div>
+								)}
+							</form.Field>
+
+							<form.Field name="emailLogoWidth">
+								{(field) => (
+									<div className="flex flex-col gap-2">
+										<Label htmlFor={field.name}>Širina loga u emailu (px)</Label>
+										<div className="flex items-center gap-4">
+											<Input
+												id={field.name}
+												type="number"
+												min={50}
+												max={400}
+												value={field.state.value}
+												onChange={(e) => field.handleChange(parseInt(e.target.value) || 150)}
+												onBlur={field.handleBlur}
+												className="w-24"
+											/>
+											<span className="text-sm text-muted-foreground">
+												50 - 400 px
+											</span>
+										</div>
+									</div>
+								)}
+							</form.Field>
+						</div>
+
+						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+							<form.Field name="emailButtonBgColor">
+								{(field) => (
+									<div className="flex flex-col gap-2">
+										<Label>Boja pozadine</Label>
+										<EmailColorPicker
+											value={field.state.value}
+											onChange={field.handleChange}
+											colors={EMAIL_BUTTON_COLORS}
+										/>
+									</div>
+								)}
+							</form.Field>
+
+							<form.Field name="emailButtonTextColor">
+								{(field) => (
+									<div className="flex flex-col gap-2">
+										<Label>Boja teksta</Label>
+										<EmailColorPicker
+											value={field.state.value}
+											onChange={field.handleChange}
+											colors={EMAIL_TEXT_COLORS}
+										/>
+									</div>
+								)}
+							</form.Field>
+						</div>
+
+						{/* Email Button Preview */}
+						<div className="flex flex-col gap-2 mt-4">
+							<Label>Pregled dugmeta</Label>
+							<div className="p-6 bg-gray-100 rounded-lg flex justify-center">
+								<div
+									className="px-6 py-3 rounded-lg text-sm font-semibold cursor-default"
+									style={{
+										backgroundColor: form.state.values.emailButtonBgColor,
+										color: form.state.values.emailButtonTextColor,
+									}}
+								>
+									Pogledaj narudžbu
+								</div>
+							</div>
+						</div>
 					</CardContent>
 				</Card>
 
@@ -922,5 +1103,254 @@ function ImageUploadField({
 				</label>
 			)}
 		</div>
+	);
+}
+
+// Email button color presets (hex values for inline email styles)
+const EMAIL_BUTTON_COLORS = [
+	{ value: "#ef4444", label: "Red" },
+	{ value: "#f97316", label: "Orange" },
+	{ value: "#f59e0b", label: "Amber" },
+	{ value: "#eab308", label: "Yellow" },
+	{ value: "#84cc16", label: "Lime" },
+	{ value: "#22c55e", label: "Green" },
+	{ value: "#10b981", label: "Emerald" },
+	{ value: "#14b8a6", label: "Teal" },
+	{ value: "#06b6d4", label: "Cyan" },
+	{ value: "#0ea5e9", label: "Sky" },
+	{ value: "#3b82f6", label: "Blue" },
+	{ value: "#2563eb", label: "Blue 600" },
+	{ value: "#6366f1", label: "Indigo" },
+	{ value: "#8b5cf6", label: "Violet" },
+	{ value: "#a855f7", label: "Purple" },
+	{ value: "#d946ef", label: "Fuchsia" },
+	{ value: "#ec4899", label: "Pink" },
+	{ value: "#f43f5e", label: "Rose" },
+	{ value: "#64748b", label: "Slate" },
+	{ value: "#1e293b", label: "Dark Slate" },
+	{ value: "#18181b", label: "Black" },
+];
+
+const EMAIL_TEXT_COLORS = [
+	{ value: "#ffffff", label: "White" },
+	{ value: "#f8fafc", label: "Slate 50" },
+	{ value: "#f1f5f9", label: "Slate 100" },
+	{ value: "#1e293b", label: "Slate 800" },
+	{ value: "#0f172a", label: "Slate 900" },
+	{ value: "#000000", label: "Black" },
+];
+
+// Email color picker component
+function EmailColorPicker({
+	value,
+	onChange,
+	colors,
+}: {
+	value: string;
+	onChange: (value: string) => void;
+	colors: Array<{ value: string; label: string }>;
+}) {
+	const [open, setOpen] = useState(false);
+	const selectedColor = colors.find((c) => c.value === value);
+
+	return (
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger asChild>
+				<Button
+					variant="outline"
+					className="w-full justify-start gap-2"
+				>
+					<div
+						className="w-5 h-5 rounded border border-gray-300"
+						style={{ backgroundColor: value }}
+					/>
+					<span className="truncate">
+						{selectedColor?.label || value}
+					</span>
+				</Button>
+			</PopoverTrigger>
+			<PopoverContent className="w-64 p-3" align="start">
+				<div className="grid grid-cols-5 gap-2">
+					{colors.map((color) => (
+						<button
+							key={color.value}
+							type="button"
+							className={cn(
+								"w-8 h-8 rounded-md border-2 transition-all flex items-center justify-center",
+								value === color.value
+									? "border-gray-900 scale-110"
+									: "border-transparent hover:scale-105"
+							)}
+							style={{ backgroundColor: color.value }}
+							onClick={() => {
+								onChange(color.value);
+								setOpen(false);
+							}}
+							title={color.label}
+						>
+							{value === color.value && (
+								<Check
+									className={cn(
+										"w-4 h-4",
+										color.value === "#ffffff" || color.value === "#f8fafc" || color.value === "#f1f5f9"
+											? "text-gray-900"
+											: "text-white"
+									)}
+								/>
+							)}
+						</button>
+					))}
+				</div>
+			</PopoverContent>
+		</Popover>
+	);
+}
+
+// Email preview dialog component
+function EmailPreviewDialog({
+	logoUrl,
+	logoWidth,
+	buttonBgColor,
+	buttonTextColor,
+	shopTitle,
+}: {
+	logoUrl: string;
+	logoWidth: number;
+	buttonBgColor: string;
+	buttonTextColor: string;
+	shopTitle: string;
+}) {
+	return (
+		<Dialog>
+			<DialogTrigger asChild>
+				<Button variant="outline" size="sm">
+					<Eye className="size-4 mr-2" />
+					Pregled emaila
+				</Button>
+			</DialogTrigger>
+			<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+				<DialogHeader>
+					<DialogTitle>Pregled emaila</DialogTitle>
+				</DialogHeader>
+				<div className="mt-4">
+					{/* Email Preview Container */}
+					<div className="border rounded-lg overflow-hidden bg-gray-100">
+						{/* Simulated Email Client */}
+						<div className="bg-white">
+							{/* Email Content */}
+							<table
+								style={{
+									width: "100%",
+									maxWidth: "600px",
+									margin: "0 auto",
+									backgroundColor: "#ffffff",
+									fontFamily: "Arial, sans-serif",
+								}}
+								cellPadding="0"
+								cellSpacing="0"
+							>
+								{/* Header with Logo */}
+								<tbody>
+									<tr>
+										<td style={{ padding: "32px 24px", textAlign: "center", backgroundColor: "#f9fafb" }}>
+											{logoUrl ? (
+												<img
+													src={logoUrl}
+													alt={shopTitle || "Shop"}
+													style={{ width: `${logoWidth}px`, height: "auto" }}
+												/>
+											) : (
+												<div style={{ fontSize: "24px", fontWeight: "bold", color: "#111827" }}>
+													{shopTitle || "Vaš Shop"}
+												</div>
+											)}
+										</td>
+									</tr>
+
+									{/* Main Content */}
+									<tr>
+										<td style={{ padding: "32px 24px" }}>
+											<h1 style={{ fontSize: "24px", fontWeight: "bold", color: "#111827", margin: "0 0 16px 0" }}>
+												Hvala na narudžbi!
+											</h1>
+											<p style={{ fontSize: "16px", color: "#4b5563", lineHeight: "1.6", margin: "0 0 24px 0" }}>
+												Vaša narudžba <strong>#ORD-123456</strong> je uspješno primljena. Poslat ćemo vam obavijest kada bude spremna za slanje.
+											</p>
+
+											{/* Order Summary Box */}
+											<div style={{ backgroundColor: "#f9fafb", borderRadius: "8px", padding: "20px", marginBottom: "24px" }}>
+												<h2 style={{ fontSize: "14px", fontWeight: "600", color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 16px 0" }}>
+													Sažetak narudžbe
+												</h2>
+
+												{/* Sample Product */}
+												<div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+													<div style={{ width: "48px", height: "48px", backgroundColor: "#e5e7eb", borderRadius: "6px" }} />
+													<div style={{ flex: 1 }}>
+														<div style={{ fontSize: "14px", fontWeight: "500", color: "#111827" }}>Primjer proizvoda</div>
+														<div style={{ fontSize: "12px", color: "#6b7280" }}>Veličina: M</div>
+													</div>
+													<div style={{ fontSize: "14px", fontWeight: "600", color: "#111827" }}>49.99 KM</div>
+												</div>
+
+												<div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "12px", marginTop: "12px" }}>
+													<div style={{ display: "flex", justifyContent: "space-between", fontSize: "14px", color: "#4b5563", marginBottom: "4px" }}>
+														<span>Međuzbir</span>
+														<span>49.99 KM</span>
+													</div>
+													<div style={{ display: "flex", justifyContent: "space-between", fontSize: "14px", color: "#4b5563", marginBottom: "8px" }}>
+														<span>Dostava</span>
+														<span>5.00 KM</span>
+													</div>
+													<div style={{ display: "flex", justifyContent: "space-between", fontSize: "18px", fontWeight: "bold", color: "#111827", paddingTop: "8px", borderTop: "1px solid #e5e7eb" }}>
+														<span>Ukupno</span>
+														<span>54.99 KM</span>
+													</div>
+												</div>
+											</div>
+
+											{/* CTA Button */}
+											<div style={{ textAlign: "center" }}>
+												<a
+													href="#"
+													style={{
+														display: "inline-block",
+														padding: "14px 32px",
+														backgroundColor: buttonBgColor,
+														color: buttonTextColor,
+														textDecoration: "none",
+														borderRadius: "8px",
+														fontSize: "16px",
+														fontWeight: "600",
+													}}
+												>
+													Pogledaj narudžbu
+												</a>
+											</div>
+										</td>
+									</tr>
+
+									{/* Footer */}
+									<tr>
+										<td style={{ padding: "24px", backgroundColor: "#f9fafb", textAlign: "center" }}>
+											<p style={{ fontSize: "14px", color: "#6b7280", margin: "0 0 8px 0" }}>
+												{shopTitle || "Vaš Shop"}
+											</p>
+											<p style={{ fontSize: "12px", color: "#9ca3af", margin: 0 }}>
+												© {new Date().getFullYear()} Sva prava zadržana.
+											</p>
+										</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+
+					<p className="text-xs text-muted-foreground mt-4 text-center">
+						Ovo je približan pregled kako će email izgledati. Stvarni izgled može varirati ovisno o email klijentu.
+					</p>
+				</div>
+			</DialogContent>
+		</Dialog>
 	);
 }

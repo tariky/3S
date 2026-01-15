@@ -11,7 +11,7 @@ import {
 import { addToCartMutationOptions, CART_QUERY_KEY } from "@/queries/cart";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, ShoppingCart, ChevronRight, Home, Check } from "lucide-react";
+import { ChevronRight, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCartSession } from "@/hooks/useCartSession";
 import { ProductImageCarousel } from "@/components/shop/ProductImageCarousel";
@@ -20,6 +20,7 @@ import { QuantityPicker } from "@/components/shop/QuantityPicker";
 import { MobileStickyCart } from "@/components/shop/MobileStickyCart";
 import { RecommendationCarousel } from "@/components/shop/RecommendationCarousel";
 import { WishlistButton } from "@/components/shop/WishlistButton";
+import { AddToCartWithAnimation } from "@/components/shop/AddToCartWithAnimation";
 import {
   trackProductViewServerFn,
   getSimilarItemsServerFn,
@@ -37,10 +38,8 @@ export const Route = createFileRoute("/product/$slug")({
       ),
     ]);
 
-    if (!product) {
-      throw notFound();
-    }
-
+    // Return null product instead of throwing notFound() to avoid SSR bug
+    // https://github.com/TanStack/router/issues/5960
     return { settings, navigationItems, product };
   },
   head: ({ loaderData }) => {
@@ -80,17 +79,21 @@ export const Route = createFileRoute("/product/$slug")({
   },
   notFoundComponent: () => {
     return (
-      <div className="container mx-auto px-4 py-12">
-        <div className="text-center">
-          <h1 className="text-2xl font-medium text-gray-900 mb-4">
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <span className="text-4xl">404</span>
+          </div>
+          <h1 className="text-2xl font-semibold text-gray-900 mb-3">
             Proizvod nije pronađen
           </h1>
-          <p className="text-gray-600 mb-6">
-            Proizvod koji tražite ne postoji ili je uklonjen.
+          <p className="text-gray-600 mb-8">
+            Proizvod koji tražite ne postoji, premješten je ili je uklonjen.
           </p>
-          <Button asChild variant="outline">
-            <Link to="/products" search={{ tags: undefined }}>
-              Nazad na proizvode
+          <Button asChild>
+            <Link to="/">
+              <Home className="size-4 mr-2" />
+              Nazad na početnu
             </Link>
           </Button>
         </div>
@@ -112,9 +115,38 @@ function ProductDetailPage() {
   // Use SSR data as initial data, allow client-side refetches
   const { data: product } = useQuery({
     ...getShopProductBySlugQueryOptions(slug),
-    initialData: initialProduct as ShopProduct,
+    initialData: initialProduct as ShopProduct | null,
     staleTime: 1000 * 60 * 5, // 5 minutes
+    enabled: !!initialProduct, // Don't fetch if product doesn't exist
   });
+
+  // Handle product not found - render 404 UI instead of throwing
+  // This is a workaround for TanStack Start SSR bug #5960
+  if (!initialProduct) {
+    return (
+      <ShopLayout settings={settings} navigationItems={navigationItems}>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="text-center max-w-md mx-auto px-4">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-4xl">404</span>
+            </div>
+            <h1 className="text-2xl font-semibold text-gray-900 mb-3">
+              Proizvod nije pronađen
+            </h1>
+            <p className="text-gray-600 mb-8">
+              Proizvod koji tražite ne postoji, premješten je ili je uklonjen.
+            </p>
+            <Button asChild>
+              <Link to="/">
+                <Home className="size-4 mr-2" />
+                Nazad na početnu
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </ShopLayout>
+    );
+  }
 
   const [selectedOptions, setSelectedOptions] = useState<
     Record<string, string>
@@ -122,6 +154,7 @@ function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1);
   const [showAddedFeedback, setShowAddedFeedback] = useState(false);
   const recommendationsRef = useRef<HTMLDivElement>(null);
+  const imageContainerRef = useRef<HTMLDivElement>(null);
   const addToCartMutation = useMutation(
     addToCartMutationOptions(sessionId || undefined)
   );
@@ -186,39 +219,48 @@ function ProductDetailPage() {
     );
   }, [product]);
 
+  // Check if all options are selected
+  const allOptionsSelected = useMemo(() => {
+    if (!product?.options || product.options.length === 0) {
+      return true; // No options to select
+    }
+    return product.options.every((option) => selectedOptions[option.id]);
+  }, [product, selectedOptions]);
+
   // Determine selected variant based on selected options
   const currentVariant = useMemo(() => {
     if (!product?.variants || product.variants.length === 0) {
       return null;
     }
 
-    // If no options selected and there's a default variant, use it
-    if (Object.keys(selectedOptions).length === 0) {
-      const defaultVariant = product.variants.find((v) => v.isDefault);
-      if (defaultVariant) {
-        return defaultVariant;
+    // If product has options, require all to be selected
+    if (product.options && product.options.length > 0) {
+      if (!allOptionsSelected) {
+        return null; // Don't auto-select variant if options exist but aren't all selected
       }
-      // If no default, use first variant
-      return product.variants[0] || null;
+
+      // Find variant that matches all selected options
+      return (
+        product.variants.find((variant) => {
+          return product.options.every((option) => {
+            const selectedValueId = selectedOptions[option.id];
+            if (!selectedValueId) return false;
+
+            // Check if variant has this option value ID
+            return variant.options.some(
+              (vOpt) =>
+                vOpt.optionName === option.name &&
+                vOpt.optionValueId === selectedValueId
+            );
+          });
+        }) || null
+      );
     }
 
-    // Find variant that matches all selected options
-    return (
-      product.variants.find((variant) => {
-        return product.options.every((option) => {
-          const selectedValueId = selectedOptions[option.id];
-          if (!selectedValueId) return false;
-
-          // Check if variant has this option value ID
-          return variant.options.some(
-            (vOpt) =>
-              vOpt.optionName === option.name &&
-              vOpt.optionValueId === selectedValueId
-          );
-        });
-      }) || null
-    );
-  }, [product, selectedOptions]);
+    // No options - use default variant or first variant
+    const defaultVariant = product.variants.find((v) => v.isDefault);
+    return defaultVariant || product.variants[0] || null;
+  }, [product, selectedOptions, allOptionsSelected]);
 
   const displayPrice = currentVariant?.price || product?.price || "0";
   const displayComparePrice =
@@ -230,8 +272,15 @@ function ProductDetailPage() {
   const hasDiscount = comparePriceNum && comparePriceNum > priceNum;
 
   // Get available inventory
+  // If variant is selected, use its inventory; otherwise check if any variant has stock
   const availableQuantity = currentVariant?.inventory?.available || 0;
-  const isInStock = availableQuantity > 0;
+  const hasAnyStock = useMemo(() => {
+    if (!product?.variants || product.variants.length === 0) return false;
+    return product.variants.some((v) => (v.inventory?.available || 0) > 0);
+  }, [product]);
+
+  // Product is in stock if: selected variant has stock, OR no variant selected but some variants have stock
+  const isInStock = currentVariant ? availableQuantity > 0 : hasAnyStock;
 
   const handleOptionChange = (optionId: string, valueId: string) => {
     setSelectedOptions((prev) => ({
@@ -260,14 +309,14 @@ function ProductDetailPage() {
       queryClient.invalidateQueries({ queryKey: [CART_QUERY_KEY] });
       setShowAddedFeedback(true);
 
-      // Scroll to recommendations after successful add
+      // Scroll to recommendations after a delay
       if (recommendationsRef.current && recommendedProducts.length > 0) {
         setTimeout(() => {
           recommendationsRef.current?.scrollIntoView({
             behavior: "smooth",
             block: "start",
           });
-        }, 500); // Small delay for better UX
+        }, 800); // Wait for fly animation to complete
       }
     } catch (error: unknown) {
       const err = error as { message?: string };
@@ -279,116 +328,77 @@ function ProductDetailPage() {
     }
   };
 
-  // Product should always be available from SSR
-  if (!product) {
-    return null;
-  }
 
   return (
     <ShopLayout settings={settings} navigationItems={navigationItems}>
-      <main className="container mx-auto px-4 py-6 lg:py-10">
-        {/* Breadcrumb */}
-        <nav className="mb-6 lg:mb-8" aria-label="Breadcrumb">
+      <main className="lg:container lg:mx-auto lg:px-4 py-0 lg:py-10">
+        {/* Breadcrumb - Desktop only */}
+        <nav className="hidden lg:block mb-8 px-4 lg:px-0" aria-label="Breadcrumb">
           <ol className="flex items-center flex-wrap gap-1 text-sm">
             <li className="flex items-center">
               <Link
                 to="/"
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
               >
                 <Home className="size-4" />
-                <span className="hidden sm:inline">Početna</span>
+                <span>Početna</span>
               </Link>
             </li>
-            <li className="flex items-center text-gray-300">
+            <li className="flex items-center text-muted-foreground/50">
               <ChevronRight className="size-4" />
             </li>
             {product.category && (
               <>
                 <li className="flex items-center">
-                  <Link
-                    to="/products/$categorySlug"
-                    params={{ categorySlug: product.category.slug }}
-                    search={{ tags: undefined }}
-                    className="px-2 py-1 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all"
-                  >
+                  <span className="px-2 py-1 text-muted-foreground">
                     {product.category.name}
-                  </Link>
+                  </span>
                 </li>
-                <li className="flex items-center text-gray-300">
+                <li className="flex items-center text-muted-foreground/50">
                   <ChevronRight className="size-4" />
                 </li>
               </>
             )}
             <li className="flex items-center">
-              <span className="px-2 py-1 text-gray-900 font-medium truncate max-w-[250px]">
+              <span className="px-2 py-1 text-foreground font-medium truncate max-w-[250px]">
                 {product.name}
               </span>
             </li>
           </ol>
         </nav>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-12">
           {/* Image Carousel */}
-          <div className="lg:sticky lg:top-24 lg:self-start">
+          <div ref={imageContainerRef} className="lg:sticky lg:top-24 lg:self-start">
             <ProductImageCarousel images={images} productName={product.name} />
           </div>
 
           {/* Product Info */}
-          <div className="space-y-6">
+          <div className="space-y-5 px-4 lg:px-0">
             {/* Category */}
             {product.category && (
-              <Link
-                to="/products/$categorySlug"
-                params={{ categorySlug: product.category.slug }}
-                search={{ tags: undefined }}
-                className="text-sm text-gray-500 hover:text-gray-700 transition-colors uppercase tracking-wide"
-              >
+              <span className="inline-block text-xs text-muted-foreground uppercase tracking-widest">
                 {product.category.name}
-              </Link>
+              </span>
             )}
 
             {/* Title */}
-            <h1 className="text-2xl lg:text-3xl font-medium text-gray-900">
+            <h1 className="text-xl lg:text-2xl font-medium text-foreground leading-tight">
               {product.name}
             </h1>
 
-            {/* Price - Desktop */}
-            <div className="hidden lg:flex items-baseline gap-3">
-              <span className="text-2xl font-semibold text-gray-900">
+            {/* Price */}
+            <div className="flex items-center gap-3">
+              <span className="text-xl lg:text-2xl font-semibold text-foreground">
                 {priceNum.toFixed(2)} KM
               </span>
               {hasDiscount && (
                 <>
-                  <span className="text-lg text-gray-400 line-through">
+                  <span className="text-sm text-muted-foreground line-through">
                     {comparePriceNum!.toFixed(2)} KM
                   </span>
-                  <span className="text-sm font-medium text-rose-600">
-                    -
-                    {Math.round(
-                      ((comparePriceNum! - priceNum) / comparePriceNum!) * 100
-                    )}
-                    %
-                  </span>
-                </>
-              )}
-            </div>
-
-            {/* Price - Mobile (shown since sticky bar takes over) */}
-            <div className="lg:hidden flex items-baseline gap-3">
-              <span className="text-xl font-semibold text-gray-900">
-                {priceNum.toFixed(2)} KM
-              </span>
-              {hasDiscount && (
-                <>
-                  <span className="text-base text-gray-400 line-through">
-                    {comparePriceNum!.toFixed(2)} KM
-                  </span>
-                  <span className="text-sm font-medium text-rose-600">
-                    -
-                    {Math.round(
-                      ((comparePriceNum! - priceNum) / comparePriceNum!) * 100
-                    )}
-                    %
+                  <span className="text-xs font-medium text-white bg-rose-500 px-2 py-0.5 rounded">
+                    -{Math.round(((comparePriceNum! - priceNum) / comparePriceNum!) * 100)}%
                   </span>
                 </>
               )}
@@ -396,125 +406,111 @@ function ProductDetailPage() {
 
             {/* Variant Options */}
             {product.options && product.options.length > 0 && (
-              <div className="space-y-5">
-                {product.options.map((option) => (
-                  <div key={option.id}>
-                    <label className="block text-sm font-medium text-gray-900 mb-3">
-                      {option.name}
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {option.values.map((value) => {
-                        const isSelected =
-                          selectedOptions[option.id] === value.id;
-                        return (
-                          <button
-                            key={value.id}
-                            onClick={() =>
-                              handleOptionChange(option.id, value.id)
-                            }
-                            className={cn(
-                              "px-4 py-2.5 rounded-md border text-sm font-medium transition-all",
-                              isSelected
-                                ? "border-gray-900 bg-gray-900 text-white"
-                                : "border-gray-200 bg-white text-gray-900 hover:border-gray-400"
-                            )}
-                          >
-                            {value.name}
-                          </button>
-                        );
-                      })}
+              <div className="space-y-4 pt-2">
+                {product.options.map((option) => {
+                  const selectedValue = option.values.find(
+                    (v) => v.id === selectedOptions[option.id]
+                  );
+                  return (
+                    <div key={option.id}>
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <span className="text-sm text-muted-foreground">
+                          {option.name}
+                        </span>
+                        {selectedValue && (
+                          <span className="text-sm font-medium text-foreground">
+                            {selectedValue.name}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {option.values.map((value) => {
+                          const isSelected =
+                            selectedOptions[option.id] === value.id;
+                          return (
+                            <button
+                              key={value.id}
+                              onClick={() =>
+                                handleOptionChange(option.id, value.id)
+                              }
+                              className={cn(
+                                "min-w-[3rem] px-4 py-2.5 rounded-lg text-sm font-medium border transition-all",
+                                isSelected
+                                  ? "border-foreground bg-foreground text-background"
+                                  : "border-border bg-background text-foreground hover:border-foreground"
+                              )}
+                            >
+                              {value.name}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {/* Quantity & Add to Cart - Desktop */}
-            <div className="hidden lg:block space-y-4">
-              {/* Quantity Picker */}
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-medium text-gray-900">
-                  Količina
-                </span>
-                <QuantityPicker
-                  value={quantity}
-                  onChange={setQuantity}
-                  min={1}
-                  max={availableQuantity || 1}
-                  disabled={!isInStock || addToCartMutation.isPending}
-                />
-                {!isInStock && (
-                  <span className="text-sm text-red-500">Rasprodano</span>
-                )}
-              </div>
-
-              {/* Add to Cart Button and Wishlist */}
-              <div className="flex items-center gap-3">
-                <Button
-                  size="lg"
-                  className={cn(
-                    "flex-1 h-12 text-base font-medium transition-all duration-300",
-                    showAddedFeedback && "bg-emerald-500 hover:bg-emerald-500"
-                  )}
-                  disabled={
-                    !isInStock || addToCartMutation.isPending || showAddedFeedback
-                  }
-                  onClick={handleAddToCart}
-                >
-                  {addToCartMutation.isPending ? (
-                    <Loader2 className="size-5 animate-spin" />
-                  ) : showAddedFeedback ? (
-                    <span className="flex items-center gap-2 animate-success-pop">
-                      <Check className="size-5" />
-                      Dodano u korpu
-                    </span>
-                  ) : (
-                    <>
-                      <ShoppingCart className="size-5 mr-2" />
-                      {isInStock ? "Dodaj u korpu" : "Nema na zalihi"}
-                    </>
-                  )}
-                </Button>
-                <WishlistButton
-                  productId={product.id}
-                  size="lg"
-                  className="h-12 w-12 shadow-md border border-gray-200"
-                />
-              </div>
+            <div className="hidden lg:flex items-center gap-3 pt-2">
+              <QuantityPicker
+                value={quantity}
+                onChange={setQuantity}
+                min={1}
+                max={availableQuantity || 1}
+                disabled={!allOptionsSelected || !isInStock || addToCartMutation.isPending}
+              />
+              <AddToCartWithAnimation
+                onAddToCart={handleAddToCart}
+                isAdding={addToCartMutation.isPending}
+                showAddedFeedback={showAddedFeedback}
+                disabled={false}
+                allOptionsSelected={allOptionsSelected}
+                isInStock={isInStock}
+                imageRef={imageContainerRef}
+                primaryImageUrl={images[0]?.url}
+                size="lg"
+              />
+              <WishlistButton
+                productId={product.id}
+                size="lg"
+                className="h-12 w-12"
+              />
             </div>
 
             {/* Stock Status Indicator */}
             {!isInStock && (
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <div className="size-2 bg-gray-400 rounded-full" />
-                <span>Trenutno nije dostupno</span>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                Trenutno nije dostupno
+              </p>
             )}
 
             {/* Info Accordion */}
-            <ProductInfoAccordion
-              shippingInfo={settings.productShippingInfo}
-              paymentInfo={settings.productPaymentInfo}
-              material={product.material}
-            />
+            <div className="pt-4">
+              <ProductInfoAccordion
+                shippingInfo={settings.productShippingInfo}
+                paymentInfo={settings.productPaymentInfo}
+                material={product.material}
+              />
+            </div>
 
             {/* SKU */}
             {product.sku && (
-              <div className="text-sm text-gray-400 pt-2">
+              <p className="text-xs text-muted-foreground">
                 SKU: {product.sku}
-              </div>
+              </p>
             )}
           </div>
         </div>
 
         {/* Description - Full Width Below */}
         {product.description && (
-          <div className="mt-12 lg:mt-16 pt-8 border-t border-gray-200">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">
+          <div className="mt-12 lg:mt-16 pt-8 border-t border-border px-4 lg:px-0">
+            <h2 className="text-lg font-medium text-foreground mb-4">
               Opis proizvoda
             </h2>
             <div className="prose prose-gray max-w-none">
-              <p className="text-gray-600 whitespace-pre-line leading-relaxed">
+              <p className="text-muted-foreground whitespace-pre-line leading-relaxed">
                 {product.description}
               </p>
             </div>
@@ -522,7 +518,7 @@ function ProductDetailPage() {
         )}
 
         {/* Recommended Products */}
-        <div ref={recommendationsRef} className="mt-12 lg:mt-16 pt-8 border-t border-gray-200">
+        <div ref={recommendationsRef} className="mt-12 lg:mt-16 pt-8 border-t border-border px-4 lg:px-0">
           <RecommendationCarousel
             title={recommendationTitle}
             products={recommendedProducts}
@@ -545,6 +541,9 @@ function ProductDetailPage() {
         isAddingToCart={addToCartMutation.isPending}
         disabled={!isInStock}
         showAddedFeedback={showAddedFeedback}
+        allOptionsSelected={allOptionsSelected}
+        imageRef={imageContainerRef}
+        primaryImageUrl={images[0]?.url}
       />
     </ShopLayout>
   );

@@ -21,7 +21,7 @@ async function getOrCreateCustomer(userId: string) {
 	}
 
 	// Check if customer already exists
-	const existingCustomer = await db.customer.findUnique({
+	const existingCustomer = await db.customers.findUnique({
 		where: { email: authUser.email },
 	});
 
@@ -35,7 +35,7 @@ async function getOrCreateCustomer(userId: string) {
 	const firstName = nameParts[0] || null;
 	const lastName = nameParts.slice(1).join(" ") || null;
 
-	await db.customer.create({
+	await db.customers.create({
 		data: {
 			id: customerId,
 			email: authUser.email,
@@ -112,7 +112,7 @@ export const getCartServerFn = createServerFn({ method: "POST" })
 		const cartData = await getOrCreateCart(userId, sessionId, headers);
 
 		// Get cart items with product and variant details
-		const items = await db.cartItem.findMany({
+		const items = await db.cart_items.findMany({
 			where: { cartId: cartData.id },
 			include: {
 				product: true,
@@ -130,7 +130,7 @@ export const getCartServerFn = createServerFn({ method: "POST" })
 
 				// Try to get variant image first, then product image
 				if (item.variant?.id) {
-					const variantMediaRow = await db.productMedia.findFirst({
+					const variantMediaRow = await db.product_media.findFirst({
 						where: {
 							productId: item.product?.id || "",
 							isPrimary: true,
@@ -148,7 +148,7 @@ export const getCartServerFn = createServerFn({ method: "POST" })
 					});
 
 					// Get variant options (Size, Color, etc.)
-					const variantOptionsRows = await db.productVariantOption.findMany({
+					const variantOptionsRows = await db.product_variant_options.findMany({
 						where: { variantId: item.variant.id },
 						include: {
 							optionValue: {
@@ -167,7 +167,7 @@ export const getCartServerFn = createServerFn({ method: "POST" })
 
 				// Fallback to product image
 				if (!imageUrl && item.product?.id) {
-					const productMediaRow = await db.productMedia.findFirst({
+					const productMediaRow = await db.product_media.findFirst({
 						where: {
 							productId: item.product.id,
 							isPrimary: true,
@@ -223,7 +223,7 @@ export const addToCartServerFn = createServerFn({ method: "POST" })
 		const cartData = await getOrCreateCart(userId, sessionId, headers);
 
 		// Check if item already exists in cart
-		const existingItem = await db.cartItem.findFirst({
+		const existingItem = await db.cart_items.findFirst({
 			where: {
 				cartId: cartData.id,
 				productId: data.productId,
@@ -253,7 +253,7 @@ export const addToCartServerFn = createServerFn({ method: "POST" })
 
 		if (existingItem) {
 			// Update quantity
-			await db.cartItem.update({
+			await db.cart_items.update({
 				where: { id: existingItem.id },
 				data: {
 					quantity: existingItem.quantity + data.quantity,
@@ -263,7 +263,7 @@ export const addToCartServerFn = createServerFn({ method: "POST" })
 		} else {
 			// Add new item
 			const itemId = nanoid();
-			await db.cartItem.create({
+			await db.cart_items.create({
 				data: {
 					id: itemId,
 					cartId: cartData.id,
@@ -330,7 +330,7 @@ export const updateCartItemServerFn = createServerFn({ method: "POST" })
 		// Verify cart ownership
 		const cartData = await getOrCreateCart(userId, sessionId, headers);
 
-		const item = await db.cartItem.findUnique({
+		const item = await db.cart_items.findUnique({
 			where: { id: data.itemId },
 		});
 
@@ -356,12 +356,12 @@ export const updateCartItemServerFn = createServerFn({ method: "POST" })
 
 		if (data.quantity === 0) {
 			// Remove item
-			await db.cartItem.delete({
+			await db.cart_items.delete({
 				where: { id: data.itemId },
 			});
 		} else {
 			// Update quantity
-			await db.cartItem.update({
+			await db.cart_items.update({
 				where: { id: data.itemId },
 				data: {
 					quantity: data.quantity,
@@ -400,7 +400,7 @@ export const removeFromCartServerFn = createServerFn({ method: "POST" })
 		// Verify cart ownership
 		const cartData = await getOrCreateCart(userId, sessionId, headers);
 
-		const item = await db.cartItem.findUnique({
+		const item = await db.cart_items.findUnique({
 			where: { id: data.itemId },
 		});
 
@@ -408,7 +408,7 @@ export const removeFromCartServerFn = createServerFn({ method: "POST" })
 			throw new Error("Cart item not found");
 		}
 
-		await db.cartItem.delete({
+		await db.cart_items.delete({
 			where: { id: data.itemId },
 		});
 
@@ -448,12 +448,12 @@ export const mergeCartsServerFn = createServerFn({ method: "POST" })
 		const userCart = await getOrCreateCart(data.userId, null, new Headers());
 
 		// Get guest cart items
-		const guestItems = await db.cartItem.findMany({
+		const guestItems = await db.cart_items.findMany({
 			where: { cartId: guestCart.id },
 		});
 
 		// Get user cart items
-		const userItems = await db.cartItem.findMany({
+		const userItems = await db.cart_items.findMany({
 			where: { cartId: userCart.id },
 		});
 
@@ -468,7 +468,7 @@ export const mergeCartsServerFn = createServerFn({ method: "POST" })
 
 			if (existingUserItem) {
 				// Update quantity
-				await db.cartItem.update({
+				await db.cart_items.update({
 					where: { id: existingUserItem.id },
 					data: {
 						quantity: existingUserItem.quantity + guestItem.quantity,
@@ -477,7 +477,7 @@ export const mergeCartsServerFn = createServerFn({ method: "POST" })
 				});
 			} else {
 				// Move item to user cart
-				await db.cartItem.update({
+				await db.cart_items.update({
 					where: { id: guestItem.id },
 					data: {
 						cartId: userCart.id,
@@ -520,7 +520,7 @@ export const clearCartServerFn = createServerFn({ method: "POST" })
 		const cartData = await getOrCreateCart(userId, sessionId, headers);
 
 		// Delete all cart items
-		await db.cartItem.deleteMany({
+		await db.cart_items.deleteMany({
 			where: { cartId: cartData.id },
 		});
 

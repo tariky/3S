@@ -17,7 +17,7 @@ async function getOrCreateCustomer(userId: string) {
 		return null;
 	}
 
-	const existingCustomer = await db.customer.findUnique({
+	const existingCustomer = await db.customers.findUnique({
 		where: { email: authUser.email },
 	});
 
@@ -30,7 +30,7 @@ async function getOrCreateCustomer(userId: string) {
 	const firstName = nameParts[0] || null;
 	const lastName = nameParts.slice(1).join(" ") || null;
 
-	await db.customer.create({
+	await db.customers.create({
 		data: {
 			id: customerId,
 			email: authUser.email,
@@ -98,7 +98,7 @@ export const getWishlistServerFn = createServerFn({ method: "POST" })
 
 		const wishlistData = await getOrCreateWishlist(userId, sessionId);
 
-		const items = await db.wishlistItem.findMany({
+		const items = await db.wishlist_items.findMany({
 			where: { wishlistId: wishlistData.id },
 			include: {
 				product: {
@@ -111,6 +111,12 @@ export const getWishlistServerFn = createServerFn({ method: "POST" })
 						variants: {
 							include: {
 								inventory: true,
+								variantOptions: {
+									include: {
+										option: true,
+										optionValue: true,
+									},
+								},
 							},
 						},
 						category: true,
@@ -152,7 +158,7 @@ export const addToWishlistServerFn = createServerFn({ method: "POST" })
 		const wishlistData = await getOrCreateWishlist(userId, sessionId);
 
 		// Check if item already exists
-		const existingItem = await db.wishlistItem.findFirst({
+		const existingItem = await db.wishlist_items.findFirst({
 			where: {
 				wishlistId: wishlistData.id,
 				productId: data.productId,
@@ -161,7 +167,7 @@ export const addToWishlistServerFn = createServerFn({ method: "POST" })
 
 		if (!existingItem) {
 			const itemId = nanoid();
-			await db.wishlistItem.create({
+			await db.wishlist_items.create({
 				data: {
 					id: itemId,
 					wishlistId: wishlistData.id,
@@ -199,7 +205,7 @@ export const removeFromWishlistServerFn = createServerFn({ method: "POST" })
 
 		const wishlistData = await getOrCreateWishlist(userId, sessionId);
 
-		await db.wishlistItem.deleteMany({
+		await db.wishlist_items.deleteMany({
 			where: {
 				wishlistId: wishlistData.id,
 				productId: data.productId,
@@ -235,7 +241,7 @@ export const toggleWishlistServerFn = createServerFn({ method: "POST" })
 
 		const wishlistData = await getOrCreateWishlist(userId, sessionId);
 
-		const existingItem = await db.wishlistItem.findFirst({
+		const existingItem = await db.wishlist_items.findFirst({
 			where: {
 				wishlistId: wishlistData.id,
 				productId: data.productId,
@@ -245,11 +251,11 @@ export const toggleWishlistServerFn = createServerFn({ method: "POST" })
 		let isInWishlist: boolean;
 
 		if (existingItem) {
-			await db.wishlistItem.delete({ where: { id: existingItem.id } });
+			await db.wishlist_items.delete({ where: { id: existingItem.id } });
 			isInWishlist = false;
 		} else {
 			const itemId = nanoid();
-			await db.wishlistItem.create({
+			await db.wishlist_items.create({
 				data: {
 					id: itemId,
 					wishlistId: wishlistData.id,
@@ -298,7 +304,7 @@ export const isInWishlistServerFn = createServerFn({ method: "POST" })
 		const conditions: { customerId?: string; sessionId?: string }[] = [];
 
 		if (userId) {
-			const customer = await db.customer.findFirst({
+			const customer = await db.customers.findFirst({
 				where: {
 					email: (await db.user.findUnique({ where: { id: userId } }))?.email,
 				},
@@ -315,7 +321,7 @@ export const isInWishlistServerFn = createServerFn({ method: "POST" })
 
 		if (!wishlist) return { isInWishlist: false };
 
-		const item = await db.wishlistItem.findFirst({
+		const item = await db.wishlist_items.findFirst({
 			where: {
 				wishlistId: wishlist.id,
 				productId: data.productId,
@@ -347,12 +353,12 @@ export const mergeWishlistsServerFn = createServerFn({ method: "POST" })
 		const userWishlist = await getOrCreateWishlist(data.userId, null);
 
 		// Get guest wishlist items
-		const guestItems = await db.wishlistItem.findMany({
+		const guestItems = await db.wishlist_items.findMany({
 			where: { wishlistId: guestWishlist.id },
 		});
 
 		// Get user wishlist items
-		const userItems = await db.wishlistItem.findMany({
+		const userItems = await db.wishlist_items.findMany({
 			where: { wishlistId: userWishlist.id },
 		});
 
@@ -361,7 +367,7 @@ export const mergeWishlistsServerFn = createServerFn({ method: "POST" })
 		// Merge items (add guest items not already in user wishlist)
 		for (const guestItem of guestItems) {
 			if (!userProductIds.has(guestItem.productId)) {
-				await db.wishlistItem.update({
+				await db.wishlist_items.update({
 					where: { id: guestItem.id },
 					data: { wishlistId: userWishlist.id },
 				});
@@ -398,7 +404,7 @@ export const getWishlistProductIdsServerFn = createServerFn({ method: "POST" })
 		const conditions: { customerId?: string; sessionId?: string }[] = [];
 
 		if (userId) {
-			const customer = await db.customer.findFirst({
+			const customer = await db.customers.findFirst({
 				where: {
 					email: (await db.user.findUnique({ where: { id: userId } }))?.email,
 				},
@@ -415,7 +421,7 @@ export const getWishlistProductIdsServerFn = createServerFn({ method: "POST" })
 
 		if (!wishlist) return { productIds: [] };
 
-		const items = await db.wishlistItem.findMany({
+		const items = await db.wishlist_items.findMany({
 			where: { wishlistId: wishlist.id },
 			select: { productId: true },
 		});
@@ -435,7 +441,7 @@ export const getWishlistProductIdsQueryOptions = (sessionId?: string) => {
 // Analytics: Get most wishlisted products
 export const getWishlistAnalyticsServerFn = createServerFn({ method: "GET" })
 	.handler(async () => {
-		const mostWishlisted = await db.wishlistItem.groupBy({
+		const mostWishlisted = await db.wishlist_items.groupBy({
 			by: ["productId"],
 			_count: { productId: true },
 			orderBy: { _count: { productId: "desc" } },
@@ -444,7 +450,7 @@ export const getWishlistAnalyticsServerFn = createServerFn({ method: "GET" })
 
 		const productIds = mostWishlisted.map((item) => item.productId);
 
-		const products = await db.product.findMany({
+		const products = await db.products.findMany({
 			where: { id: { in: productIds } },
 			include: {
 				media: {

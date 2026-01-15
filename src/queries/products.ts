@@ -16,13 +16,13 @@ async function syncProductToGorse(productId: string) {
 	if (!isGorseConfigured()) return;
 
 	try {
-		const product = await db.product.findUnique({
+		const product = await db.products.findUnique({
 			where: { id: productId },
 			include: {
 				category: true,
 				vendor: true,
 				tags: { include: { tag: true } },
-				collectionProducts: { include: { collection: true } },
+				collections: { include: { collection: true } },
 				variants: { include: { inventory: true } },
 			},
 		});
@@ -38,7 +38,7 @@ async function syncProductToGorse(productId: string) {
 		// Build categories array
 		const categories: string[] = [];
 		if (product.category?.slug) categories.push(product.category.slug);
-		product.collectionProducts.forEach((cp) => {
+		product.collections.forEach((cp) => {
 			if (cp.collection?.slug) categories.push(cp.collection.slug);
 		});
 
@@ -85,7 +85,7 @@ async function generateUniqueSlug(
 
 	while (true) {
 		// Check if slug exists
-		const existingProduct = await db.product.findFirst({
+		const existingProduct = await db.products.findFirst({
 			where: {
 				slug,
 				...(excludeProductId ? { NOT: { id: excludeProductId } } : {}),
@@ -119,7 +119,7 @@ export const getAllCategoriesForSelectServerFn = createServerFn({
 })
 	.inputValidator(z.object({}))
 	.handler(async () => {
-		const categories = await db.productCategory.findMany({
+		const categories = await db.product_categories.findMany({
 			orderBy: { name: "asc" },
 		});
 		return categories;
@@ -131,7 +131,7 @@ export const getAllVendorsForSelectServerFn = createServerFn({
 })
 	.inputValidator(z.object({}))
 	.handler(async () => {
-		const vendors = await db.vendor.findMany({
+		const vendors = await db.vendors.findMany({
 			where: { active: true },
 			orderBy: { name: "asc" },
 		});
@@ -144,7 +144,7 @@ export const getAllTagsForSelectServerFn = createServerFn({
 })
 	.inputValidator(z.object({}))
 	.handler(async () => {
-		const tags = await db.productTag.findMany({
+		const tags = await db.product_tags.findMany({
 			orderBy: { name: "asc" },
 		});
 		return tags;
@@ -160,7 +160,7 @@ export const createOrGetTagServerFn = createServerFn({ method: "POST" })
 			.replace(/(^-|-$)/g, "");
 
 		// Check if tag exists
-		const existingTag = await db.productTag.findFirst({
+		const existingTag = await db.product_tags.findFirst({
 			where: { slug },
 		});
 
@@ -169,7 +169,7 @@ export const createOrGetTagServerFn = createServerFn({ method: "POST" })
 		}
 
 		// Create new tag
-		const newTag = await db.productTag.create({
+		const newTag = await db.product_tags.create({
 			data: {
 				id: nanoid(),
 				name: data.name,
@@ -289,6 +289,16 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 				)
 				.optional()
 				.default([]),
+			adsMedia: z
+				.array(
+					z.object({
+						variantId: z.string().nullable(),
+						mediaType: z.enum(["video", "image_1x1", "image_4x5", "image_9x16"]),
+						mediaId: z.string(),
+					})
+				)
+				.optional()
+				.default([]),
 		})
 	)
 	.handler(async ({ data }) => {
@@ -315,7 +325,7 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 		}
 
 		// Insert product
-		await db.product.create({
+		await db.products.create({
 			data: {
 				id: productId,
 				name: data.name,
@@ -341,7 +351,7 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 
 		// Insert product media
 		if (data.media && data.media.length > 0) {
-			await db.productMedia.createMany({
+			await db.product_media.createMany({
 				data: data.media.map((m) => ({
 					id: nanoid(),
 					productId,
@@ -361,7 +371,7 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 				const optionId = nanoid();
 				optionIdMap.set(variantDef.id, optionId);
 
-				await db.productOption.create({
+				await db.product_options.create({
 					data: {
 						id: optionId,
 						productId,
@@ -374,7 +384,7 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 					const optionValueId = nanoid();
 					optionValueIdMap.set(optionValue.id, optionValueId);
 
-					await db.productOptionValue.create({
+					await db.product_option_values.create({
 						data: {
 							id: optionValueId,
 							optionId,
@@ -397,7 +407,7 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 					variantSku = `${productSku}-${index + 1}`;
 				}
 
-				await db.productVariant.create({
+				await db.product_variants.create({
 					data: {
 						id: variantId,
 						productId,
@@ -422,7 +432,7 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 						const dbOptionValueId = optionValueIdMap.get(combo.optionId);
 
 						if (dbOptionId && dbOptionValueId) {
-							await db.productVariantOption.create({
+							await db.product_variant_options.create({
 								data: {
 									id: nanoid(),
 									variantId,
@@ -447,12 +457,29 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 							committed: 0,
 						},
 					});
+
+					// Create initial inventory batch for tracking
+					if (quantityValue > 0) {
+						await db.inventory_batches.create({
+							data: {
+								id: nanoid(),
+								variantId,
+								productId,
+								quantityAdded: quantityValue,
+								quantitySold: 0,
+								quantityRemaining: quantityValue,
+								restockedAt: new Date(),
+								source: "initial",
+								notes: "Početna zaliha pri kreiranju proizvoda",
+							},
+						});
+					}
 				}
 			}
 		} else {
 			// No variants - create a single default variant
 			const defaultVariantId = nanoid();
-			await db.productVariant.create({
+			await db.product_variants.create({
 				data: {
 					id: defaultVariantId,
 					productId,
@@ -467,22 +494,40 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 			});
 
 			if (data.availableQuantity !== null && data.availableQuantity !== undefined) {
+				const quantityValue = data.availableQuantity ? parseInt(data.availableQuantity) : 0;
 				await db.inventory.create({
 					data: {
 						id: nanoid(),
 						variantId: defaultVariantId,
-						available: data.availableQuantity ? parseInt(data.availableQuantity) : 0,
-						onHand: data.availableQuantity ? parseInt(data.availableQuantity) : 0,
+						available: quantityValue,
+						onHand: quantityValue,
 						reserved: 0,
 						committed: 0,
 					},
 				});
+
+				// Create initial inventory batch for tracking
+				if (quantityValue > 0) {
+					await db.inventory_batches.create({
+						data: {
+							id: nanoid(),
+							variantId: defaultVariantId,
+							productId,
+							quantityAdded: quantityValue,
+							quantitySold: 0,
+							quantityRemaining: quantityValue,
+							restockedAt: new Date(),
+							source: "initial",
+							notes: "Početna zaliha pri kreiranju proizvoda",
+						},
+					});
+				}
 			}
 		}
 
 		// Insert product tags
 		if (data.tagIds && data.tagIds.length > 0) {
-			await db.productTagsToProduct.createMany({
+			await db.product_tags_to_products.createMany({
 				data: data.tagIds.map((tagId) => ({
 					productId,
 					tagId,
@@ -490,7 +535,20 @@ export const createProductServerFn = createServerFn({ method: "POST" })
 			});
 		}
 
-		const createdProduct = await db.product.findUnique({
+		// Insert ads media
+		if (data.adsMedia && data.adsMedia.length > 0) {
+			await db.product_ads_media.createMany({
+				data: data.adsMedia.map((am) => ({
+					id: nanoid(),
+					productId,
+					variantId: am.variantId,
+					mediaType: am.mediaType,
+					mediaId: am.mediaId,
+				})),
+			});
+		}
+
+		const createdProduct = await db.products.findUnique({
 			where: { id: productId },
 		});
 
@@ -546,7 +604,7 @@ export const getProductsServerFn = createServerFn({ method: "POST" })
 		}
 
 		const [products, totalCount] = await Promise.all([
-			db.product.findMany({
+			db.products.findMany({
 				where,
 				include: {
 					category: true,
@@ -556,7 +614,7 @@ export const getProductsServerFn = createServerFn({ method: "POST" })
 				take: limit,
 				skip: (page - 1) * limit,
 			}),
-			db.product.count({ where }),
+			db.products.count({ where }),
 		]);
 
 		const hasNextPage = page * limit < totalCount;
@@ -606,7 +664,7 @@ export const searchProductsForOrderServerFn = createServerFn({ method: "POST" })
 			];
 		}
 
-		const products = await db.product.findMany({
+		const products = await db.products.findMany({
 			where,
 			orderBy: { createdAt: "desc" },
 			take: limit,
@@ -615,7 +673,7 @@ export const searchProductsForOrderServerFn = createServerFn({ method: "POST" })
 		// Get primary images and variants for each product
 		const productsWithDetails = await Promise.all(
 			products.map(async (product) => {
-				const primaryMedia = await db.productMedia.findFirst({
+				const primaryMedia = await db.product_media.findFirst({
 					where: {
 						productId: product.id,
 						isPrimary: true,
@@ -623,7 +681,7 @@ export const searchProductsForOrderServerFn = createServerFn({ method: "POST" })
 					include: { media: true },
 				});
 
-				const variants = await db.productVariant.findMany({
+				const variants = await db.product_variants.findMany({
 					where: { productId: product.id },
 					include: {
 						inventory: true,
@@ -670,7 +728,7 @@ export const searchProductsForOrderServerFn = createServerFn({ method: "POST" })
 export const getProductByIdServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ productId: z.string() }))
 	.handler(async ({ data }) => {
-		const product = await db.product.findUnique({
+		const product = await db.products.findUnique({
 			where: { id: data.productId },
 			include: {
 				category: true,
@@ -698,6 +756,9 @@ export const getProductByIdServerFn = createServerFn({ method: "POST" })
 				},
 				tags: {
 					include: { tag: true },
+				},
+				adsMedia: {
+					include: { media: true },
 				},
 			},
 		});
@@ -811,6 +872,16 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 					)
 					.optional()
 					.default([]),
+				adsMedia: z
+					.array(
+						z.object({
+							variantId: z.string().nullable(),
+							mediaType: z.enum(["video", "image_1x1", "image_4x5", "image_9x16"]),
+							mediaId: z.string(),
+						})
+					)
+					.optional()
+					.default([]),
 			}),
 		})
 	)
@@ -825,7 +896,7 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 
 		const slug = await generateUniqueSlug(baseSlug, productId);
 
-		const currentProduct = await db.product.findUnique({
+		const currentProduct = await db.products.findUnique({
 			where: { id: productId },
 			include: {
 				tags: { select: { tagId: true } },
@@ -858,7 +929,7 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 		}
 
 		// Update product
-		await db.product.update({
+		await db.products.update({
 			where: { id: productId },
 			data: {
 				name: updateData.name,
@@ -883,9 +954,9 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 		});
 
 		// Update product media
-		await db.productMedia.deleteMany({ where: { productId } });
+		await db.product_media.deleteMany({ where: { productId } });
 		if (updateData.media && updateData.media.length > 0) {
-			await db.productMedia.createMany({
+			await db.product_media.createMany({
 				data: updateData.media.map((m) => ({
 					id: nanoid(),
 					productId,
@@ -897,9 +968,9 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 		}
 
 		// Update product tags
-		await db.productTagsToProduct.deleteMany({ where: { productId } });
+		await db.product_tags_to_products.deleteMany({ where: { productId } });
 		if (updateData.tagIds && updateData.tagIds.length > 0) {
-			await db.productTagsToProduct.createMany({
+			await db.product_tags_to_products.createMany({
 				data: updateData.tagIds.map((tagId) => ({
 					productId,
 					tagId,
@@ -907,8 +978,22 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 			});
 		}
 
+		// Update ads media
+		await db.product_ads_media.deleteMany({ where: { productId } });
+		if (updateData.adsMedia && updateData.adsMedia.length > 0) {
+			await db.product_ads_media.createMany({
+				data: updateData.adsMedia.map((am) => ({
+					id: nanoid(),
+					productId,
+					variantId: am.variantId,
+					mediaType: am.mediaType,
+					mediaId: am.mediaId,
+				})),
+			});
+		}
+
 		// Get existing variants for SKU preservation
-		const existingVariants = await db.productVariant.findMany({
+		const existingVariants = await db.product_variants.findMany({
 			where: { productId },
 		});
 		const existingVariantSkuMap = new Map<string, string>();
@@ -920,15 +1005,15 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 
 		// Delete existing variant options, variants, option values, and options
 		for (const variant of existingVariants) {
-			await db.productVariantOption.deleteMany({ where: { variantId: variant.id } });
+			await db.product_variant_options.deleteMany({ where: { variantId: variant.id } });
 		}
-		await db.productVariant.deleteMany({ where: { productId } });
+		await db.product_variants.deleteMany({ where: { productId } });
 
-		const existingOptions = await db.productOption.findMany({ where: { productId } });
+		const existingOptions = await db.product_options.findMany({ where: { productId } });
 		for (const option of existingOptions) {
-			await db.productOptionValue.deleteMany({ where: { optionId: option.id } });
+			await db.product_option_values.deleteMany({ where: { optionId: option.id } });
 		}
-		await db.productOption.deleteMany({ where: { productId } });
+		await db.product_options.deleteMany({ where: { productId } });
 
 		// Recreate variant definitions and variants
 		const optionIdMap = new Map<string, string>();
@@ -939,7 +1024,7 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 				const optionId = variantDef.id || nanoid();
 				optionIdMap.set(variantDef.id || optionId, optionId);
 
-				await db.productOption.create({
+				await db.product_options.create({
 					data: {
 						id: optionId,
 						productId,
@@ -952,7 +1037,7 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 					const optionValueId = optionValue.id || nanoid();
 					optionValueIdMap.set(optionValue.id || optionValueId, optionValueId);
 
-					await db.productOptionValue.create({
+					await db.product_option_values.create({
 						data: {
 							id: optionValueId,
 							optionId,
@@ -980,7 +1065,7 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 					}
 				}
 
-				await db.productVariant.create({
+				await db.product_variants.create({
 					data: {
 						id: variantId,
 						productId,
@@ -1007,7 +1092,7 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 								if (optionValue) {
 									const optionValueId = optionValueIdMap.get(optionValue.id || "");
 									if (optionValueId && optionId) {
-										await db.productVariantOption.create({
+										await db.product_variant_options.create({
 											data: {
 												id: nanoid(),
 												variantId,
@@ -1031,6 +1116,9 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 					});
 
 					if (existingInventory) {
+						const previousOnHand = existingInventory.onHand;
+						const quantityDiff = quantityValue - previousOnHand;
+
 						await db.inventory.update({
 							where: { variantId },
 							data: {
@@ -1038,6 +1126,28 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 								available: quantityValue - existingInventory.reserved - existingInventory.committed,
 							},
 						});
+
+						// Handle batch tracking for inventory changes
+						if (quantityDiff > 0) {
+							// Inventory increased - create new batch
+							await db.inventory_batches.create({
+								data: {
+									id: nanoid(),
+									variantId,
+									productId,
+									quantityAdded: quantityDiff,
+									quantitySold: 0,
+									quantityRemaining: quantityDiff,
+									restockedAt: new Date(),
+									source: "manual",
+									notes: "Ručno povećanje zalihe",
+								},
+							});
+						} else if (quantityDiff < 0) {
+							// Inventory decreased - deduct from batches using FIFO
+							const { deductFromBatchesFIFO } = await import("@/queries/inventory");
+							await deductFromBatchesFIFO(db, variantId, Math.abs(quantityDiff));
+						}
 					} else {
 						await db.inventory.create({
 							data: {
@@ -1049,13 +1159,30 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 								committed: 0,
 							},
 						});
+
+						// Create initial batch for new inventory
+						if (quantityValue > 0) {
+							await db.inventory_batches.create({
+								data: {
+									id: nanoid(),
+									variantId,
+									productId,
+									quantityAdded: quantityValue,
+									quantitySold: 0,
+									quantityRemaining: quantityValue,
+									restockedAt: new Date(),
+									source: "initial",
+									notes: "Početna zaliha pri ažuriranju proizvoda",
+								},
+							});
+						}
 					}
 				}
 			}
 		} else {
 			// Create default variant if no variants provided
 			const defaultVariantId = nanoid();
-			await db.productVariant.create({
+			await db.product_variants.create({
 				data: {
 					id: defaultVariantId,
 					productId,
@@ -1129,7 +1256,7 @@ export const updateProductServerFn = createServerFn({ method: "POST" })
 export const getVariantByIdServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ variantId: z.string() }))
 	.handler(async ({ data }) => {
-		const variant = await db.productVariant.findUnique({
+		const variant = await db.product_variants.findUnique({
 			where: { id: data.variantId },
 			include: {
 				product: {
@@ -1202,7 +1329,7 @@ export const updateVariantServerFn = createServerFn({ method: "POST" })
 		if (updateData.position !== undefined) updateFields.position = updateData.position;
 		if (updateData.isDefault !== undefined) updateFields.isDefault = updateData.isDefault;
 
-		await db.productVariant.update({
+		await db.product_variants.update({
 			where: { id: variantId },
 			data: updateFields,
 		});
@@ -1218,12 +1345,12 @@ export const deleteProductServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ id: z.string() }))
 	.handler(async ({ data }) => {
 		// Check if product was active before deleting
-		const product = await db.product.findUnique({
+		const product = await db.products.findUnique({
 			where: { id: data.id },
 			select: { status: true },
 		});
 
-		await db.product.delete({ where: { id: data.id } });
+		await db.products.delete({ where: { id: data.id } });
 
 		// Mark all rule-based collections for regeneration if product was active
 		if (product?.status === "active") {

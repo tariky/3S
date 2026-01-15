@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { searchProductsForOrderServerFn } from "@/queries/products";
-import { Loader2 } from "lucide-react";
+import { Loader2, ImageOff } from "lucide-react";
 import { ProxyImage } from "@/components/ui/proxy-image";
 
 interface ProductSearchProps {
@@ -185,17 +185,21 @@ export function ProductSearch({ onSelectProduct }: ProductSearchProps) {
                   >
                     {/* Product Header */}
                     <div className="flex gap-2 p-2 bg-gray-50 border-b">
-                      <ProxyImage
-                        src={
-                          product.primaryImage ||
-                          "https://via.placeholder.com/64"
-                        }
-                        alt={product.name}
-                        width={64}
-                        height={64}
-                        resizingType="fill"
-                        className="w-16 h-16 rounded-md aspect-square object-cover flex-shrink-0"
-                      />
+                      {product.primaryImage ? (
+                        <ProxyImage
+                          src={product.primaryImage}
+                          alt={product.name}
+                          width={64}
+                          height={64}
+                          resizingType="fill"
+                          className="w-16 h-16 rounded-md aspect-square object-cover flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-md bg-gray-200 flex flex-col items-center justify-center flex-shrink-0">
+                          <ImageOff className="size-5 text-gray-400" />
+                          <span className="text-[10px] text-gray-400 mt-0.5">Nema slike</span>
+                        </div>
+                      )}
                       <div className="flex flex-col gap-1 flex-1 min-w-0">
                         <span className="text-sm font-medium">
                           {product.name}

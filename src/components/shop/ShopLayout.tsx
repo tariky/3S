@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import { CartButton } from "./CartButton";
 import { Cart } from "./Cart";
 import { SearchDialog } from "./SearchDialog";
+import { WishlistNavButton } from "./WishlistNavButton";
+import { FlyToCartProvider, useFlyToCart } from "./FlyToCartProvider";
 import { authClient } from "@/lib/auth-client";
 import {
   DropdownMenu,
@@ -19,9 +21,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import * as LucideIcons from "lucide-react";
 import { ProxyImage } from "@/components/ui/proxy-image";
-import { fetchSvgContentServerFn } from "@/queries/images";
+import { ThemeToggle, MobileThemeSelector } from "@/components/theme-toggle";
+import { Footer } from "./Footer";
 
 // Get icon component by name
 function getIconComponent(
@@ -39,23 +48,15 @@ function ShopLogo({
   url,
   width,
   alt,
+  svgContent,
 }: {
   url: string;
   width: number;
   alt: string;
+  svgContent?: string | null;
 }) {
-  const [svgContent, setSvgContent] = React.useState<string | null>(null);
-  const isSvg = url.toLowerCase().endsWith(".svg");
-
-  React.useEffect(() => {
-    if (isSvg) {
-      fetchSvgContentServerFn({ data: { url } })
-        .then((text) => setSvgContent(text))
-        .catch(() => setSvgContent(null));
-    }
-  }, [url, isSvg]);
-
-  if (isSvg && svgContent) {
+  // If SVG content is pre-fetched, render it directly
+  if (svgContent) {
     return (
       <div
         style={{ width: `${width}px` }}
@@ -142,7 +143,7 @@ function NavigationItemComponent({
         to={item.url as any}
         onClick={onClose}
         className={cn(
-          "flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-md transition-colors",
+          "flex items-center gap-2 px-4 py-2 text-sm font-medium text-foreground/80 hover:text-foreground hover:bg-muted rounded-md transition-colors",
           hasChildren && "cursor-pointer"
         )}
         onMouseEnter={() => hasChildren && setIsOpen(true)}
@@ -160,7 +161,7 @@ function NavigationItemComponent({
       </Link>
       {hasChildren && isOpen && (
         <div
-          className="absolute left-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-2"
+          className="absolute left-0 top-full mt-1 w-48 bg-popover border border-border rounded-md shadow-lg z-50 py-2"
           onMouseEnter={() => setIsOpen(true)}
           onMouseLeave={() => setIsOpen(false)}
         >
@@ -169,7 +170,7 @@ function NavigationItemComponent({
               key={child.id}
               to={child.url as any}
               onClick={onClose}
-              className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+              className="block px-4 py-2 text-sm text-foreground/80 hover:bg-muted hover:text-foreground"
             >
               {child.title}
             </Link>
@@ -186,7 +187,15 @@ export interface ShopLayoutProps {
   children: React.ReactNode;
 }
 
-export function ShopLayout({
+export function ShopLayout(props: ShopLayoutProps) {
+  return (
+    <FlyToCartProvider>
+      <ShopLayoutInner {...props} />
+    </FlyToCartProvider>
+  );
+}
+
+function ShopLayoutInner({
   settings,
   navigationItems,
   children,
@@ -194,6 +203,7 @@ export function ShopLayout({
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [cartOpen, setCartOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const { cartRef, wishlistRef, isCartBouncing, isWishlistBouncing } = useFlyToCart();
   const [user, setUser] = React.useState<{
     name: string;
     email: string;
@@ -249,32 +259,46 @@ export function ShopLayout({
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <AlertBanner settings={settings} />
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
+      <nav className="bg-background border-b border-border sticky top-0 z-50">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
-            {/* Logo */}
-            <Link to="/" className="flex items-center gap-2">
-              {settings.shopLogo ? (
-                <ShopLogo
-                  url={settings.shopLogo}
-                  width={settings.shopLogoWidth || 120}
-                  alt={settings.shopTitle || "Shop"}
-                />
-              ) : (
-                <>
-                  <div className="bg-primary text-primary-foreground flex aspect-square size-10 items-center justify-center rounded-lg">
-                    <span className="text-xl font-bold">
-                      {(settings.shopTitle || "S")[0].toUpperCase()}
+            {/* Left Side - Mobile Menu + Logo */}
+            <div className="flex items-center gap-2">
+              {/* Mobile Menu Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden"
+                onClick={() => setMobileMenuOpen(true)}
+              >
+                <Menu className="size-6" />
+              </Button>
+
+              {/* Logo */}
+              <Link to="/" className="flex items-center gap-2">
+                {settings.shopLogo ? (
+                  <ShopLogo
+                    url={settings.shopLogo}
+                    width={settings.shopLogoWidth || 120}
+                    alt={settings.shopTitle || "Shop"}
+                    svgContent={settings.shopLogoSvgContent}
+                  />
+                ) : (
+                  <>
+                    <div className="bg-primary text-primary-foreground flex aspect-square size-10 items-center justify-center rounded-lg">
+                      <span className="text-xl font-bold">
+                        {(settings.shopTitle || "S")[0].toUpperCase()}
+                      </span>
+                    </div>
+                    <span className="text-xl font-bold text-foreground hidden sm:inline">
+                      {settings.shopTitle || "Shop"}
                     </span>
-                  </div>
-                  <span className="text-xl font-bold text-gray-900">
-                    {settings.shopTitle || "Shop"}
-                  </span>
-                </>
-              )}
-            </Link>
+                  </>
+                )}
+              </Link>
+            </div>
 
             {/* Desktop Navigation */}
             <div className="hidden md:flex items-center gap-1">
@@ -283,8 +307,8 @@ export function ShopLayout({
               ))}
             </div>
 
-            {/* Right Side Actions */}
-            <div className="flex items-center gap-2">
+            {/* Right Side Actions - Order: Search, Profile, Wishlist, Cart */}
+            <div className="flex items-center gap-1 sm:gap-2">
               <Button
                 variant="ghost"
                 size="icon"
@@ -294,7 +318,6 @@ export function ShopLayout({
               >
                 <Search className="size-5" />
               </Button>
-              <CartButton onClick={() => setCartOpen(true)} />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-9 w-9">
@@ -307,7 +330,7 @@ export function ShopLayout({
                       <DropdownMenuLabel>
                         <div className="flex flex-col space-y-1">
                           <p className="text-sm font-medium">{user.name}</p>
-                          <p className="text-xs text-gray-500">{user.email}</p>
+                          <p className="text-xs text-muted-foreground">{user.email}</p>
                         </div>
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
@@ -356,192 +379,145 @@ export function ShopLayout({
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              {/* Mobile Menu Button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="md:hidden"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              >
-                {mobileMenuOpen ? (
-                  <X className="size-6" />
-                ) : (
-                  <Menu className="size-6" />
-                )}
-              </Button>
+              <WishlistNavButton
+                wishlistRef={wishlistRef}
+                isWishlistBouncing={isWishlistBouncing}
+              />
+              <ThemeToggle className="hidden md:flex" />
+              <CartButton
+                onClick={() => setCartOpen(true)}
+                cartRef={cartRef}
+                isCartBouncing={isCartBouncing}
+              />
             </div>
           </div>
 
-          {/* Mobile Navigation */}
-          {mobileMenuOpen && (
-            <div className="md:hidden border-t border-gray-200 py-4">
-              <div className="flex flex-col gap-1">
-                {navigationItems.map((item) => (
-                  <div key={item.id}>
-                    <Link
-                      to={item.url as any}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md"
-                    >
-                      {item.icon && (
-                        <span className="text-xs font-semibold text-primary">
-                          {item.icon}
-                        </span>
+        </div>
+
+        {/* Mobile Menu Sheet */}
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+          <SheetContent side="left" className="w-[300px] sm:w-[350px] p-0">
+            <SheetHeader className="p-4 border-b border-border">
+              <SheetTitle className="text-left">
+                {settings.shopLogo ? (
+                  <ShopLogo
+                    url={settings.shopLogo}
+                    width={Math.min(settings.shopLogoWidth || 120, 140)}
+                    alt={settings.shopTitle || "Shop"}
+                    svgContent={settings.shopLogoSvgContent}
+                  />
+                ) : (
+                  <span className="text-lg font-semibold">{settings.shopTitle || "Shop"}</span>
+                )}
+              </SheetTitle>
+            </SheetHeader>
+
+            <div className="flex flex-col h-[calc(100%-65px)]">
+              {/* Navigation Links */}
+              <div className="flex-1 overflow-y-auto py-4">
+                <nav className="flex flex-col gap-1 px-2">
+                  {navigationItems.map((item) => (
+                    <div key={item.id}>
+                      <Link
+                        to={item.url as any}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground hover:bg-muted rounded-lg transition-colors"
+                      >
+                        {item.icon && (
+                          <span className="text-xs font-semibold text-primary">
+                            {item.icon}
+                          </span>
+                        )}
+                        <span>{item.title}</span>
+                      </Link>
+                      {item.children && item.children.length > 0 && (
+                        <div className="ml-4 mt-1 flex flex-col gap-1">
+                          {item.children.map((child) => (
+                            <Link
+                              key={child.id}
+                              to={child.url as any}
+                              onClick={() => setMobileMenuOpen(false)}
+                              className="px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+                            >
+                              {child.title}
+                            </Link>
+                          ))}
+                        </div>
                       )}
-                      <span>{item.title}</span>
+                    </div>
+                  ))}
+                </nav>
+              </div>
+
+              {/* Bottom Section - Auth & Theme */}
+              <div className="border-t border-border p-4 space-y-2">
+                {user ? (
+                  <>
+                    <div className="px-4 py-2 mb-2">
+                      <p className="text-sm font-medium text-foreground">{user.name}</p>
+                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                    </div>
+                    <Link
+                      to="/account"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground hover:bg-muted rounded-lg transition-colors"
+                    >
+                      <User className="size-4" />
+                      Moj profil
                     </Link>
-                    {item.children && item.children.length > 0 && (
-                      <div className="ml-6 mt-1 flex flex-col gap-1">
-                        {item.children.map((child) => (
-                          <Link
-                            key={child.id}
-                            to={child.url as any}
-                            onClick={() => setMobileMenuOpen(false)}
-                            className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-md"
-                          >
-                            {child.title}
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {/* Auth Links in Mobile Menu */}
-                <div className="border-t border-gray-200 mt-2 pt-2">
-                  {user ? (
-                    <>
-                      <Link
-                        to="/account"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md"
-                      >
-                        <User className="size-4" />
-                        Moj profil
-                      </Link>
-                      <Link
-                        to="/account/orders"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md"
-                      >
-                        <Package className="size-4" />
-                        Moje narudžbe
-                      </Link>
-                      <button
-                        onClick={() => {
-                          handleSignOut();
-                          setMobileMenuOpen(false);
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md w-full text-left"
-                      >
-                        <LogOut className="size-4" />
-                        Odjavi se
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <Link
-                        to="/auth/login"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-md"
-                      >
-                        <User className="size-4" />
-                        Prijavi se
-                      </Link>
-                      <Link
-                        to="/auth/register"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary hover:bg-gray-50 rounded-md"
-                      >
-                        Registruj se
-                      </Link>
-                    </>
-                  )}
+                    <Link
+                      to="/account/orders"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground hover:bg-muted rounded-lg transition-colors"
+                    >
+                      <Package className="size-4" />
+                      Moje narudžbe
+                    </Link>
+                    <button
+                      onClick={() => {
+                        handleSignOut();
+                        setMobileMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground hover:bg-muted rounded-lg transition-colors w-full text-left"
+                    >
+                      <LogOut className="size-4" />
+                      Odjavi se
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      to="/auth/login"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-foreground hover:bg-muted rounded-lg transition-colors"
+                    >
+                      <User className="size-4" />
+                      Prijavi se
+                    </Link>
+                    <Link
+                      to="/auth/register"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-primary hover:bg-muted rounded-lg transition-colors"
+                    >
+                      Registruj se
+                    </Link>
+                  </>
+                )}
+
+                {/* Theme Selector */}
+                <div className="pt-2 border-t border-border mt-2">
+                  <MobileThemeSelector />
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </SheetContent>
+        </Sheet>
+
         <Cart open={cartOpen} onOpenChange={setCartOpen} />
         <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       </nav>
       <main>{children}</main>
-      <footer className="bg-gray-900 text-white mt-16">
-        <div className="container mx-auto px-4 py-12">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div>
-              <h3 className="text-lg font-semibold mb-4">
-                {settings.shopTitle || "Shop"}
-              </h3>
-              <p className="text-gray-400 text-sm">
-                {settings.shopDescription ||
-                  "Vaš pouzdani partner za online shopping"}
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-4">Kupovina</h4>
-              <ul className="space-y-2 text-sm text-gray-400">
-                <li>
-                  <a href="#" className="hover:text-white">
-                    Kako naručiti
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-white">
-                    Dostava
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-white">
-                    Plaćanje
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-4">Informacije</h4>
-              <ul className="space-y-2 text-sm text-gray-400">
-                <li>
-                  <a href="#" className="hover:text-white">
-                    O nama
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-white">
-                    Kontakt
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-white">
-                    FAQ
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-4">Pravno</h4>
-              <ul className="space-y-2 text-sm text-gray-400">
-                <li>
-                  <a href="#" className="hover:text-white">
-                    Politika privatnosti
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-white">
-                    Uslovi korištenja
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-gray-800 mt-8 pt-8 text-center text-sm text-gray-400">
-            <p>
-              &copy; {new Date().getFullYear()} {settings.shopTitle || "Shop"}.
-              Sva prava zadržana.
-            </p>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   );
 }

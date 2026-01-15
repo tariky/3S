@@ -21,14 +21,14 @@ export const getPaymentMethodsServerFn = createServerFn({ method: "POST" })
       ? { name: { contains: search } }
       : undefined;
 
-    const response = await db.paymentMethod.findMany({
+    const response = await db.payment_methods.findMany({
       where: whereCondition,
       orderBy: { position: "asc" },
       take: limit,
       skip: (page - 1) * limit,
     });
 
-    const totalCount = await db.paymentMethod.count({
+    const totalCount = await db.payment_methods.count({
       where: whereCondition,
     });
 
@@ -51,6 +51,7 @@ export const createPaymentMethodServerFn = createServerFn({ method: "POST" })
     z.object({
       name: z.string(),
       description: z.string().optional(),
+      type: z.string().optional(),
       active: z.boolean().optional(),
       position: z.number().optional(),
     })
@@ -58,11 +59,12 @@ export const createPaymentMethodServerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const methodId = nanoid();
 
-    const method = await db.paymentMethod.create({
+    const method = await db.payment_methods.create({
       data: {
         id: methodId,
         name: data.name,
         description: data.description || null,
+        type: data.type || "cod",
         active: data.active ?? true,
         position: data.position ?? 0,
       },
@@ -77,16 +79,18 @@ export const updatePaymentMethodServerFn = createServerFn({ method: "POST" })
       id: z.string(),
       name: z.string(),
       description: z.string().optional().nullable(),
+      type: z.string().optional(),
       active: z.boolean().optional(),
       position: z.number().optional(),
     })
   )
   .handler(async ({ data }) => {
-    const method = await db.paymentMethod.update({
+    const method = await db.payment_methods.update({
       where: { id: data.id },
       data: {
         name: data.name,
         description: data.description ?? null,
+        type: data.type || "cod",
         active: data.active ?? true,
         position: data.position ?? 0,
       },
@@ -102,7 +106,7 @@ export const deletePaymentMethodServerFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    await db.paymentMethod.delete({
+    await db.payment_methods.delete({
       where: { id: data.id },
     });
     return {
@@ -141,7 +145,7 @@ export const getActivePaymentMethodsServerFn = createServerFn({
 })
   .inputValidator(z.object({}))
   .handler(async () => {
-    const methods = await db.paymentMethod.findMany({
+    const methods = await db.payment_methods.findMany({
       where: { active: true },
       orderBy: { position: "asc" },
     });

@@ -1,5 +1,6 @@
 import * as React from "react"
 import { type LucideIcon } from "lucide-react"
+import { Link, useRouterState } from "@tanstack/react-router"
 
 import {
   SidebarGroup,
@@ -19,17 +20,25 @@ export function NavSecondary({
     icon: LucideIcon
   }[]
 } & React.ComponentPropsWithoutRef<typeof SidebarGroup>) {
+  const routerState = useRouterState();
+  const pathname = routerState.location.pathname;
+
+  const isActive = (url: string) => {
+    if (url === "#") return false;
+    return pathname === url || pathname.startsWith(url + "/");
+  };
+
   return (
     <SidebarGroup {...props}>
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => (
             <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton asChild size="sm">
-                <a href={item.url}>
+              <SidebarMenuButton asChild size="sm" isActive={isActive(item.url)}>
+                <Link to={item.url}>
                   <item.icon />
                   <span>{item.title}</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}

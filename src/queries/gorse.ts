@@ -20,7 +20,7 @@ import {
 
 // Transform a product to Gorse item format
 async function transformProductToGorseItem(productId: string): Promise<GorseItem | null> {
-  const product = await db.product.findUnique({
+  const product = await db.products.findUnique({
     where: { id: productId },
     include: {
       category: true,
@@ -30,7 +30,7 @@ async function transformProductToGorseItem(productId: string): Promise<GorseItem
           tag: true,
         },
       },
-      collectionProducts: {
+      collections: {
         include: {
           collection: true,
         },
@@ -59,7 +59,7 @@ async function transformProductToGorseItem(productId: string): Promise<GorseItem
   if (product.category?.slug) {
     categories.push(product.category.slug);
   }
-  product.collectionProducts.forEach((cp) => {
+  product.collections.forEach((cp) => {
     if (cp.collection?.slug) {
       categories.push(cp.collection.slug);
     }
@@ -128,7 +128,7 @@ export const syncAllItemsToGorseServerFn = createServerFn({ method: "POST" })
     }
 
     // Get all products (including inactive ones to update their hidden status)
-    const products = await db.product.findMany({
+    const products = await db.products.findMany({
       select: { id: true },
     });
 
@@ -332,7 +332,7 @@ export const trackPurchaseServerFn = createServerFn({ method: "POST" })
 // ==================== Recommendation Functions ====================
 
 // Helper to format products for response
-function formatProductsForResponse(products: Awaited<ReturnType<typeof db.product.findMany>>) {
+function formatProductsForResponse(products: Awaited<ReturnType<typeof db.products.findMany>>) {
   return products.map((p) => {
     const media = (p as { media?: { media?: { url?: string } }[] }).media;
     const variants = (p as { variants?: { id: string; price?: unknown; compareAtPrice?: unknown; variantOptions?: { option?: { name?: string }; optionValue?: { name?: string } }[]; inventory?: { available?: number } | null }[] }).variants || [];
@@ -375,7 +375,7 @@ async function getPopularProductsFromDb(count: number, categorySlug?: string) {
     whereConditions.category = { slug: categorySlug };
   }
 
-  const products = await db.product.findMany({
+  const products = await db.products.findMany({
     where: whereConditions,
     take: count,
     orderBy: { createdAt: "desc" }, // Use newest as proxy for "popular" when no data
@@ -406,7 +406,7 @@ async function getPopularProductsFromDb(count: number, categorySlug?: string) {
 // Database fallback: Get similar products (same category, excluding current item)
 async function getSimilarProductsFromDb(itemId: string, count: number) {
   // First, get the current product to find its category
-  const currentProduct = await db.product.findUnique({
+  const currentProduct = await db.products.findUnique({
     where: { id: itemId },
     select: { categoryId: true },
   });
@@ -416,7 +416,7 @@ async function getSimilarProductsFromDb(itemId: string, count: number) {
     return getLatestProductsFromDb(count);
   }
 
-  const products = await db.product.findMany({
+  const products = await db.products.findMany({
     where: {
       status: "active",
       categoryId: currentProduct.categoryId,
@@ -457,7 +457,7 @@ async function getSimilarProductsFromDb(itemId: string, count: number) {
     const remaining = count - products.length;
     const existingIds = [itemId, ...products.map((p) => p.id)];
 
-    const moreProducts = await db.product.findMany({
+    const moreProducts = await db.products.findMany({
       where: {
         status: "active",
         id: { notIn: existingIds },
@@ -515,7 +515,7 @@ async function getLatestProductsFromDb(count: number, categorySlug?: string) {
     whereConditions.category = { slug: categorySlug };
   }
 
-  const products = await db.product.findMany({
+  const products = await db.products.findMany({
     where: whereConditions,
     take: count,
     orderBy: { createdAt: "desc" },
@@ -549,7 +549,7 @@ async function getProductsFromIds(productIds: (string | undefined)[]) {
   const validIds = productIds.filter((id): id is string => !!id);
   if (validIds.length === 0) return [];
 
-  const products = await db.product.findMany({
+  const products = await db.products.findMany({
     where: {
       id: { in: validIds },
       status: "active",

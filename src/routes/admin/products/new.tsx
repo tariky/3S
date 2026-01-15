@@ -1,10 +1,4 @@
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import {
-	createFileRoute,
-	useNavigate,
-	useRouter,
-} from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import {
 	KeyboardSensor,
@@ -14,17 +8,28 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { Variant } from "@/types/products";
-import {
-	ProductForm,
-	type ProductFormValues,
-} from "@/components/products/ProductForm";
+import { type ProductFormValues } from "@/components/products/ProductForm";
 import { ProductSidebar } from "@/components/products/ProductSidebar";
+import { ProductPageLayout } from "@/components/products/ProductPageLayout";
+import { BasicInfoSection } from "@/components/products/sections/BasicInfoSection";
+import { MediaSection } from "@/components/products/sections/MediaSection";
+import {
+	AdsMediaSection,
+	type AdsMediaItem,
+} from "@/components/products/sections/AdsMediaSection";
+import { PricingSection } from "@/components/products/sections/PricingSection";
+import { VariantsSection } from "@/components/products/VariantsSection";
+import { GeneratedVariantsSection } from "@/components/products/GeneratedVariantsSection";
+import { StatusSection } from "@/components/products/sections/StatusSection";
+import { OrganizationSection } from "@/components/products/sections/OrganizationSection";
+import { ShippingSection } from "@/components/products/sections/ShippingSection";
+import { InternalSection } from "@/components/products/sections/InternalSection";
 import { useGeneratedVariants } from "../../../hooks/useGeneratedVariants";
 import { useForm } from "@tanstack/react-form";
 import { createProductServerFn } from "@/queries/products";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader } from "lucide-react";
 import { PRODUCTS_QUERY_KEY } from "@/queries/products";
+import type { MediaItem } from "@/components/products/MediaUploader";
 
 export const Route = createFileRoute("/admin/products/new")({
 	component: RouteComponent,
@@ -35,6 +40,7 @@ function RouteComponent() {
 	const router = useRouter();
 	const queryClient = useQueryClient();
 	const [variants, setVariants] = useState<Variant[]>([]);
+	const [adsMedia, setAdsMedia] = useState<AdsMediaItem[]>([]);
 
 	const sensors = useSensors(
 		useSensor(PointerSensor),
@@ -53,10 +59,10 @@ function RouteComponent() {
 			taxIncluded: true,
 			trackQuantity: true,
 			availableQuantity: "0",
-			media: [],
-			categoryId: undefined,
-			vendorId: undefined,
-			tagIds: [],
+			media: [] as MediaItem[],
+			categoryId: undefined as string | undefined,
+			vendorId: undefined as string | undefined,
+			tagIds: [] as string[],
 			status: "draft" as const,
 			featured: false,
 			material: "",
@@ -112,6 +118,13 @@ function RouteComponent() {
 				position: index,
 			}));
 
+			// Prepare ads media data
+			const adsMediaData = adsMedia.map((item) => ({
+				variantId: item.variantId,
+				mediaType: item.mediaType,
+				mediaId: item.mediaId,
+			}));
+
 			return await createProductServerFn({
 				data: {
 					name: values.name,
@@ -135,6 +148,7 @@ function RouteComponent() {
 					variantDefinitions: variantDefinitionsData,
 					generatedVariants: generatedVariantsData,
 					availableQuantity: values.availableQuantity || null,
+					adsMedia: adsMediaData,
 				},
 			});
 		},
@@ -155,36 +169,89 @@ function RouteComponent() {
 		form.handleSubmit();
 	};
 
+	const handleBack = () => {
+		navigate({
+			to: "/admin/products",
+			search: { page: 1, limit: 25, search: "" },
+		});
+	};
+
+	const mediaCount = form.state.values.media?.length || 0;
+
+	// Desktop sidebar content
+	const sidebarContent = (
+		<div className="hidden lg:flex flex-col gap-4">
+			<StatusSection
+				form={form}
+				variantCount={generatedVariants.length}
+				mediaCount={mediaCount}
+			/>
+			<OrganizationSection form={form} />
+			<ShippingSection form={form} />
+			<InternalSection form={form} />
+		</div>
+	);
+
 	return (
-		<div className="flex flex-col gap-4">
-			<div className="flex justify-between items-center">
-				<h1 className="text-2xl font-bold">Novi proizvod</h1>
-				<Button
-					onClick={handleSubmit}
-					disabled={createProductMutation.isPending || !form.state.isValid}
-				>
-					{createProductMutation.isPending ? (
-						<>
-							<Loader className="w-4 h-4 mr-2 animate-spin" />
-							Spremanje...
-						</>
-					) : (
-						"Dodaj"
-					)}
-				</Button>
-			</div>
-			<Separator />
-			<div className="grid grid-cols-12 gap-4">
-				<ProductForm
+		<ProductPageLayout
+			title="Novi proizvod"
+			status={form.state.values.status}
+			onSubmit={handleSubmit}
+			isSubmitting={createProductMutation.isPending}
+			isValid={form.state.isValid}
+			onBack={handleBack}
+			sidebarContent={sidebarContent}
+		>
+			{/* Main Content */}
+			<form
+				onSubmit={(e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					form.handleSubmit();
+				}}
+				className="flex flex-col gap-6"
+			>
+				<BasicInfoSection form={form} defaultExpanded />
+				<MediaSection form={form} defaultExpanded />
+				<AdsMediaSection
+					generatedVariants={generatedVariants}
+					adsMedia={adsMedia}
+					onAdsMediaChange={setAdsMedia}
+				/>
+				<PricingSection
+					form={form}
+					hasVariants={generatedVariants.length > 0}
+				/>
+				<VariantsSection
 					variants={variants}
 					setVariants={setVariants}
-					generatedVariants={generatedVariants}
-					setGeneratedVariants={setGeneratedVariants}
 					sensors={sensors}
-					form={form}
+					defaultExpanded
 				/>
-				<ProductSidebar form={form} />
-			</div>
-		</div>
+				{generatedVariants.length > 0 && (
+					<GeneratedVariantsSection
+						generatedVariants={generatedVariants}
+						setGeneratedVariants={setGeneratedVariants}
+						sensors={sensors}
+						defaultExpanded
+					/>
+				)}
+
+				{/* Mobile: Show sidebar sections as part of the scroll */}
+				<div className="lg:hidden flex flex-col gap-6">
+					<StatusSection
+						form={form}
+						variantCount={generatedVariants.length}
+						mediaCount={mediaCount}
+					/>
+					<OrganizationSection form={form} />
+					<ShippingSection form={form} />
+					<InternalSection form={form} />
+				</div>
+
+				{/* Hidden submit button */}
+				<button type="submit" className="hidden" />
+			</form>
+		</ProductPageLayout>
 	);
 }

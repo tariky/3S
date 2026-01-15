@@ -22,14 +22,17 @@ const countries = defaultCountries.filter((country) => {
 interface PhoneInputProps {
 	value: string;
 	onChange: (phone: string) => void;
+	onBlur?: () => void;
 	disabled?: boolean;
 	error?: boolean;
 	placeholder?: string;
+	className?: string;
 }
 
 export function PhoneInput({
 	value,
 	onChange,
+	onBlur,
 	disabled = false,
 	error = false,
 	placeholder = "61 123 456",
@@ -39,6 +42,7 @@ export function PhoneInput({
 			defaultCountry="ba"
 			value={value}
 			onChange={onChange}
+			onBlur={onBlur}
 			disabled={disabled}
 			placeholder={placeholder}
 			countries={countries}

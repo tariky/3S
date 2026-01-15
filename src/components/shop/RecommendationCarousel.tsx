@@ -95,9 +95,9 @@ export function RecommendationCarousel({
   if (loading) {
     return (
       <div className={cn("py-8", className)}>
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">{title}</h2>
+        <h2 className="text-xl font-semibold text-foreground mb-6">{title}</h2>
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-8 animate-spin text-gray-400" />
+          <Loader2 className="size-8 animate-spin text-muted-foreground" />
         </div>
       </div>
     );
@@ -111,7 +111,7 @@ export function RecommendationCarousel({
     <div className={cn("py-8", className)}>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+        <h2 className="text-xl font-semibold text-foreground">{title}</h2>
 
         {/* Desktop scroll buttons */}
         <div className="hidden md:flex items-center gap-2">
@@ -119,10 +119,10 @@ export function RecommendationCarousel({
             onClick={() => scroll("left")}
             disabled={!canScrollLeft}
             className={cn(
-              "p-2 rounded-full border border-gray-200 transition-colors",
+              "p-2 rounded-full border border-border transition-colors",
               canScrollLeft
-                ? "hover:bg-gray-100 text-gray-700"
-                : "text-gray-300 cursor-not-allowed"
+                ? "hover:bg-muted text-foreground"
+                : "text-muted-foreground/50 cursor-not-allowed"
             )}
           >
             <ChevronLeft className="size-5" />
@@ -131,10 +131,10 @@ export function RecommendationCarousel({
             onClick={() => scroll("right")}
             disabled={!canScrollRight}
             className={cn(
-              "p-2 rounded-full border border-gray-200 transition-colors",
+              "p-2 rounded-full border border-border transition-colors",
               canScrollRight
-                ? "hover:bg-gray-100 text-gray-700"
-                : "text-gray-300 cursor-not-allowed"
+                ? "hover:bg-muted text-foreground"
+                : "text-muted-foreground/50 cursor-not-allowed"
             )}
           >
             <ChevronRight className="size-5" />
@@ -145,7 +145,7 @@ export function RecommendationCarousel({
       {/* Products grid with horizontal scroll */}
       <div
         ref={scrollRef}
-        className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 -mx-4 px-4 md:mx-0 md:px-0 snap-x snap-mandatory"
+        className="flex gap-4 overflow-x-auto scrollbar-hide pb-2 snap-x snap-mandatory"
         style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
       >
         {products.map((product) => (

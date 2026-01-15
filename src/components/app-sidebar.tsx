@@ -1,18 +1,24 @@
 import * as React from "react";
 import {
 	ChartColumn,
+	ClipboardList,
 	Cog,
 	FileText,
 	FolderKanban,
-	Frame,
+	Home,
 	Inbox,
-	Map,
+	LayoutDashboard,
+	Mail,
+	Package,
+	PanelBottom,
 	Percent,
-	PieChart,
+	ShoppingBag,
 	Store,
 	Tags,
+	Truck,
 	Users,
 } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 
 import { NavMain } from "@/components/nav-main";
 import { NavSecondary } from "@/components/nav-secondary";
@@ -29,17 +35,25 @@ import {
 
 const data = {
 	user: {
-		name: "shadcn",
-		email: "m@example.com",
-		avatar: "/avatars/shadcn.jpg",
+		name: "Admin",
+		email: "admin@lunatik.ba",
+		avatar: "/avatars/admin.jpg",
 	},
 	navMain: [
+		{
+			title: "Dashboard",
+			url: "/admin",
+			icon: LayoutDashboard,
+		},
 		{
 			title: "Proizvodi",
 			url: "/admin/products",
 			icon: Tags,
-			isActive: true,
 			items: [
+				{
+					title: "Svi proizvodi",
+					url: "/admin/products",
+				},
 				{
 					title: "Kategorije",
 					url: "/admin/products/categories",
@@ -52,10 +66,6 @@ const data = {
 					title: "Dobavljači",
 					url: "/admin/products/vendors",
 				},
-				{
-					title: "Inventori",
-					url: "/admin/products/inventory",
-				},
 			],
 		},
 		{
@@ -67,6 +77,16 @@ const data = {
 			title: "Narudžbe",
 			url: "/admin/orders",
 			icon: Inbox,
+			items: [
+				{
+					title: "Sve narudžbe",
+					url: "/admin/orders",
+				},
+				{
+					title: "Napuštene korpe",
+					url: "/admin/abandoned-checkouts",
+				},
+			],
 		},
 		{
 			title: "Kupci",
@@ -74,19 +94,19 @@ const data = {
 			icon: Users,
 		},
 		{
+			title: "Inventar",
+			url: "/admin/inventory",
+			icon: Package,
+		},
+		{
+			title: "Narudžbenice",
+			url: "/admin/purchase-orders",
+			icon: Truck,
+		},
+		{
 			title: "Popusti",
 			url: "/admin/discounts",
 			icon: Percent,
-			items: [
-				{
-					title: "Svi popusti",
-					url: "/admin/discounts",
-				},
-				{
-					title: "Novi popust",
-					url: "/admin/discounts/new",
-				},
-			],
 		},
 		{
 			title: "Analitika",
@@ -96,6 +116,10 @@ const data = {
 				{
 					title: "Lista želja",
 					url: "/admin/analytics/wishlist",
+				},
+				{
+					title: "Sell-through rate",
+					url: "/admin/analytics/sell-through",
 				},
 			],
 		},
@@ -109,6 +133,21 @@ const data = {
 			url: "/admin/shop",
 			icon: Store,
 		},
+		{
+			title: "Homepage Builder",
+			url: "/admin/homepage",
+			icon: Home,
+		},
+		{
+			title: "Footer Builder",
+			url: "/admin/footer",
+			icon: PanelBottom,
+		},
+		{
+			title: "Email logovi",
+			url: "/admin/email-logs",
+			icon: Mail,
+		},
 	],
 	navSecondary: [
 		{
@@ -117,51 +156,33 @@ const data = {
 			icon: Cog,
 		},
 	],
-	projects: [
-		{
-			name: "Design Engineering",
-			url: "#",
-			icon: Frame,
-		},
-		{
-			name: "Sales & Marketing",
-			url: "#",
-			icon: PieChart,
-		},
-		{
-			name: "Travel",
-			url: "#",
-			icon: Map,
-		},
-	],
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	return (
 		<Sidebar variant="inset" {...props}>
-			<SidebarHeader>
+			<SidebarHeader className="border-b">
 				<SidebarMenu>
 					<SidebarMenuItem>
 						<SidebarMenuButton size="lg" asChild>
-							<a href="#">
-								<div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-									<Store className="size-4" />
+							<Link to="/admin">
+								<div className="bg-primary text-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+									<ShoppingBag className="size-4" />
 								</div>
 								<div className="grid flex-1 text-left text-sm leading-tight">
-									<span className="truncate font-medium">Lunatik</span>
-									<span className="truncate text-xs">Web shop</span>
+									<span className="truncate font-semibold">Lunatik</span>
+									<span className="truncate text-xs text-muted-foreground">Admin Panel</span>
 								</div>
-							</a>
+							</Link>
 						</SidebarMenuButton>
 					</SidebarMenuItem>
 				</SidebarMenu>
 			</SidebarHeader>
 			<SidebarContent>
 				<NavMain items={data.navMain} />
-				{/* <NavProjects projects={data.projects} /> */}
 				<NavSecondary items={data.navSecondary} className="mt-auto" />
 			</SidebarContent>
-			<SidebarFooter>
+			<SidebarFooter className="border-t">
 				<NavUser user={data.user} />
 			</SidebarFooter>
 		</Sidebar>

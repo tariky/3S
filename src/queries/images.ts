@@ -14,10 +14,6 @@ export const getSignedImageUrlServerFn = createServerFn({ method: "GET" })
 		})
 	)
 	.handler(async ({ data }) => {
-		// Debug: Check env vars
-		console.log("IMGPROXY_KEY loaded:", !!process.env.IMGPROXY_KEY, "length:", process.env.IMGPROXY_KEY?.length);
-		console.log("IMGPROXY_SALT loaded:", !!process.env.IMGPROXY_SALT, "length:", process.env.IMGPROXY_SALT?.length);
-
 		const options: ImgproxyOptions = {
 			width: data.width,
 			height: data.height,
@@ -25,9 +21,7 @@ export const getSignedImageUrlServerFn = createServerFn({ method: "GET" })
 			quality: data.quality,
 			format: data.format,
 		};
-		const url = getImgproxyUrl(data.src, options);
-		console.log("Generated imgproxy URL:", url);
-		return url;
+		return getImgproxyUrl(data.src, options);
 	});
 
 // Server function to fetch SVG content (avoids CORS issues)

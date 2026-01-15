@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getCartQueryOptions } from "@/queries/cart";
 import { Button } from "@/components/ui/button";
@@ -18,10 +19,21 @@ interface CartData {
 interface CartButtonProps {
 	onClick: () => void;
 	className?: string;
+	cartRef?: React.RefObject<HTMLButtonElement | null>;
+	isCartBouncing?: boolean;
 }
 
-export function CartButton({ onClick, className }: CartButtonProps) {
+export function CartButton({ onClick, className, cartRef, isCartBouncing }: CartButtonProps) {
 	const { sessionId } = useCartSession();
+	const localRef = React.useRef<HTMLButtonElement>(null);
+
+	// Sync external ref with local ref
+	React.useEffect(() => {
+		if (cartRef && localRef.current) {
+			(cartRef as React.MutableRefObject<HTMLButtonElement | null>).current = localRef.current;
+		}
+	});
+
 	const { data: cartData } = useQuery(
 		getCartQueryOptions(sessionId || undefined)
 	) as { data: CartData | undefined };
@@ -34,10 +46,15 @@ export function CartButton({ onClick, className }: CartButtonProps) {
 
 	return (
 		<Button
+			ref={localRef}
 			variant="outline"
 			size="icon"
 			onClick={onClick}
-			className={cn("relative", className)}
+			className={cn(
+				"relative",
+				isCartBouncing && "animate-cart-bounce",
+				className
+			)}
 		>
 			<ShoppingCart className="size-5" />
 			{itemCount > 0 && (

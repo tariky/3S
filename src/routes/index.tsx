@@ -4,11 +4,13 @@ import { ShoppingBag, Truck, Shield, Heart, Loader2 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { getPublicShopSettingsServerFn } from "@/queries/settings";
 import { getPublicNavigationServerFn } from "@/queries/navigation";
+import { getPublicHomepageConfigServerFn } from "@/queries/homepage";
 import { useQuery } from "@tanstack/react-query";
 import { useCartSession } from "@/hooks/useCartSession";
 import { RecommendationCarousel } from "@/components/shop/RecommendationCarousel";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { Button } from "@/components/ui/button";
+import { HomepageRenderer } from "@/components/homepage/HomepageRenderer";
 import { useState, useMemo } from "react";
 import {
 	getPopularItemsServerFn,
@@ -19,11 +21,12 @@ import {
 export const Route = createFileRoute("/")({
 	component: HomePage,
 	loader: async () => {
-		const [settings, navigationItems] = await Promise.all([
+		const [settings, navigationItems, homepageConfig] = await Promise.all([
 			getPublicShopSettingsServerFn(),
 			getPublicNavigationServerFn(),
+			getPublicHomepageConfigServerFn(),
 		]);
-		return { settings, navigationItems };
+		return { settings, navigationItems, homepageConfig };
 	},
 	head: ({ loaderData }) => {
 		const seoTitle = loaderData?.settings?.seoHomeTitle;
@@ -42,8 +45,9 @@ export const Route = createFileRoute("/")({
 });
 
 function HomePage() {
-	const { settings, navigationItems } = Route.useLoaderData();
+	const { settings, navigationItems, homepageConfig } = Route.useLoaderData();
 	const shopTitle = settings?.shopTitle || "Shop";
+	const hasCustomHomepage = homepageConfig?.components?.length > 0;
 	const { sessionId } = useCartSession();
 	const [showAllProducts, setShowAllProducts] = useState(false);
 
@@ -131,6 +135,16 @@ function HomePage() {
 		},
 	];
 
+	// If custom homepage config exists, render it
+	if (hasCustomHomepage) {
+		return (
+			<ShopLayout settings={settings} navigationItems={navigationItems}>
+				<HomepageRenderer config={homepageConfig} />
+			</ShopLayout>
+		);
+	}
+
+	// Default homepage content
 	return (
 		<ShopLayout settings={settings} navigationItems={navigationItems}>
 			{/* Hero Section */}

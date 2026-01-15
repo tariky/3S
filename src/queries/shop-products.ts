@@ -150,7 +150,7 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 			whereConditions.categoryId = categoryId;
 		} else if (categorySlug) {
 			// Get category ID from slug
-			const category = await db.productCategory.findFirst({
+			const category = await db.product_categories.findFirst({
 				where: { slug: categorySlug },
 				select: { id: true },
 			});
@@ -174,7 +174,7 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 		let productIdsWithTags: string[] | null = null;
 		if (tags && tags.length > 0) {
 			// Get tag IDs from slugs
-			const tagRows = await db.productTag.findMany({
+			const tagRows = await db.product_tags.findMany({
 				where: { slug: { in: tags } },
 				select: { id: true },
 			});
@@ -183,7 +183,7 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 				const tagIds = tagRows.map((t) => t.id);
 
 				// Get product IDs that have these tags
-				const productTagRows = await db.productTagsToProduct.findMany({
+				const productTagRows = await db.product_tagsToProduct.findMany({
 					where: { tagId: { in: tagIds } },
 					select: { productId: true },
 				});
@@ -220,7 +220,7 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 		}
 
 		// Get products (get all first, then filter and paginate)
-		const productsList = await db.product.findMany({
+		const productsList = await db.products.findMany({
 			where: whereConditions,
 			include: {
 				category: true,
@@ -232,7 +232,7 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 		const productsWithDetails = await Promise.all(
 			productsList.map(async (row) => {
 				// Get primary image
-				const primaryMediaRow = await db.productMedia.findFirst({
+				const primaryMediaRow = await db.product_media.findFirst({
 					where: {
 						productId: row.id,
 						isPrimary: true,
@@ -243,7 +243,7 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 				});
 
 				// Get variants with options
-				const variants = await db.productVariant.findMany({
+				const variants = await db.product_variants.findMany({
 					where: { productId: row.id },
 					orderBy: { position: "asc" },
 				});
@@ -251,7 +251,7 @@ export const getShopProductsServerFn = createServerFn({ method: "POST" })
 				// Get options and values for variants
 				const variantsWithOptions = await Promise.all(
 					variants.map(async (v) => {
-						const variantOptions = await db.productVariantOption.findMany({
+						const variantOptions = await db.product_variant_options.findMany({
 							where: { variantId: v.id },
 							include: {
 								option: true,
@@ -396,7 +396,7 @@ export const getShopProductsQueryOptions = (opts?: {
 export const getShopCategoriesServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({}))
 	.handler(async () => {
-		const categories = await db.productCategory.findMany({
+		const categories = await db.product_categories.findMany({
 			orderBy: { name: "asc" },
 		});
 
@@ -415,9 +415,9 @@ export const getShopCategoriesQueryOptions = () => {
 // Get product by slug with all details for product page
 export const getShopProductBySlugServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ slug: z.string() }))
-	.handler(async ({ data }): Promise<ShopProduct> => {
+	.handler(async ({ data }): Promise<ShopProduct | null> => {
 		// Fetch product with category and vendor
-		const productRow = await db.product.findFirst({
+		const productRow = await db.products.findFirst({
 			where: {
 				slug: data.slug,
 				status: "active",
@@ -428,13 +428,13 @@ export const getShopProductBySlugServerFn = createServerFn({ method: "POST" })
 		});
 
 		if (!productRow) {
-			throw new Error("Product not found");
+			return null;
 		}
 
 		const product = productRow;
 
 		// Fetch all media ordered by position
-		const mediaRows = await db.productMedia.findMany({
+		const mediaRows = await db.product_media.findMany({
 			where: { productId: product.id },
 			include: {
 				media: true,
@@ -443,14 +443,14 @@ export const getShopProductBySlugServerFn = createServerFn({ method: "POST" })
 		});
 
 		// Fetch options with values
-		const optionsRows = await db.productOption.findMany({
+		const optionsRows = await db.product_options.findMany({
 			where: { productId: product.id },
 			orderBy: { position: "asc" },
 		});
 
 		const options = await Promise.all(
 			optionsRows.map(async (optRow) => {
-				const values = await db.productOptionValue.findMany({
+				const values = await db.product_option_values.findMany({
 					where: { optionId: optRow.id },
 					orderBy: { position: "asc" },
 				});
@@ -463,7 +463,7 @@ export const getShopProductBySlugServerFn = createServerFn({ method: "POST" })
 		);
 
 		// Fetch variants with variant options and inventory
-		const variantsRows = await db.productVariant.findMany({
+		const variantsRows = await db.product_variants.findMany({
 			where: { productId: product.id },
 			include: {
 				inventory: true,
@@ -474,7 +474,7 @@ export const getShopProductBySlugServerFn = createServerFn({ method: "POST" })
 		const variants = await Promise.all(
 			variantsRows.map(async (row) => {
 				const variant = row;
-				const variantOptionsRows = await db.productVariantOption.findMany({
+				const variantOptionsRows = await db.product_variant_options.findMany({
 					where: { variantId: variant.id },
 					include: {
 						optionValue: {

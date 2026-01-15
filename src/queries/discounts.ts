@@ -61,7 +61,7 @@ export const getAllDiscountsServerFn = createServerFn({ method: "GET" })
 			}
 		}
 
-		const discounts = await db.discount.findMany({
+		const discounts = await db.discounts.findMany({
 			where,
 			orderBy: { createdAt: "desc" },
 		});
@@ -73,7 +73,7 @@ export const getAllDiscountsServerFn = createServerFn({ method: "GET" })
 export const getDiscountByIdServerFn = createServerFn({ method: "GET" })
 	.inputValidator(z.object({ id: z.string() }))
 	.handler(async ({ data }) => {
-		const discount = await db.discount.findUnique({
+		const discount = await db.discounts.findUnique({
 			where: { id: data.id },
 		});
 
@@ -101,7 +101,7 @@ export const createDiscountServerFn = createServerFn({ method: "POST" })
 	)
 	.handler(async ({ data }) => {
 		// Check if code already exists
-		const existingDiscount = await db.discount.findUnique({
+		const existingDiscount = await db.discounts.findUnique({
 			where: { code: data.code.toUpperCase() },
 		});
 
@@ -114,7 +114,7 @@ export const createDiscountServerFn = createServerFn({ method: "POST" })
 			throw new Error("Postotak ne može biti veći od 100");
 		}
 
-		const discount = await db.discount.create({
+		const discount = await db.discounts.create({
 			data: {
 				id: nanoid(),
 				code: data.code.toUpperCase(),
@@ -154,7 +154,7 @@ export const updateDiscountServerFn = createServerFn({ method: "POST" })
 	)
 	.handler(async ({ data }) => {
 		// Check if code is unique (excluding current discount)
-		const existingDiscount = await db.discount.findFirst({
+		const existingDiscount = await db.discounts.findFirst({
 			where: {
 				code: data.code.toUpperCase(),
 				NOT: { id: data.id },
@@ -170,7 +170,7 @@ export const updateDiscountServerFn = createServerFn({ method: "POST" })
 			throw new Error("Postotak ne može biti veći od 100");
 		}
 
-		const discount = await db.discount.update({
+		const discount = await db.discounts.update({
 			where: { id: data.id },
 			data: {
 				code: data.code.toUpperCase(),
@@ -196,7 +196,7 @@ export const updateDiscountServerFn = createServerFn({ method: "POST" })
 export const deleteDiscountServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ id: z.string() }))
 	.handler(async ({ data }) => {
-		await db.discount.delete({
+		await db.discounts.delete({
 			where: { id: data.id },
 		});
 
@@ -207,7 +207,7 @@ export const deleteDiscountServerFn = createServerFn({ method: "POST" })
 export const getDiscountUsageHistoryServerFn = createServerFn({ method: "GET" })
 	.inputValidator(z.object({ discountId: z.string() }))
 	.handler(async ({ data }) => {
-		const orders = await db.order.findMany({
+		const orders = await db.orders.findMany({
 			where: { discountId: data.discountId },
 			select: {
 				id: true,
@@ -244,7 +244,7 @@ export const validateDiscountCodeServerFn = createServerFn({ method: "POST" })
 		const now = new Date();
 
 		// Find discount by code (case-insensitive)
-		const discount = await db.discount.findUnique({
+		const discount = await db.discounts.findUnique({
 			where: { code: code.toUpperCase() },
 		});
 
@@ -338,7 +338,7 @@ export const removeDiscountFromCartServerFn = createServerFn({ method: "POST" })
 export const incrementDiscountUsageServerFn = createServerFn({ method: "POST" })
 	.inputValidator(z.object({ discountId: z.string() }))
 	.handler(async ({ data }) => {
-		await db.discount.update({
+		await db.discounts.update({
 			where: { id: data.discountId },
 			data: { usageCount: { increment: 1 } },
 		});

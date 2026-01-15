@@ -28,14 +28,14 @@ export const getCustomersServerFn = createServerFn({ method: "POST" })
         }
       : undefined;
 
-    const response = await db.customer.findMany({
+    const response = await db.customers.findMany({
       where: whereCondition,
       orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
       take: limit,
       skip: (page - 1) * limit,
     });
 
-    const totalCount = await db.customer.count({
+    const totalCount = await db.customers.count({
       where: whereCondition,
     });
 
@@ -86,7 +86,7 @@ export const createCustomerServerFn = createServerFn({ method: "POST" })
       hasEmail = false;
     }
 
-    await db.customer.create({
+    await db.customers.create({
       data: {
         id: customerId,
         email: customerEmail,
@@ -101,7 +101,7 @@ export const createCustomerServerFn = createServerFn({ method: "POST" })
     // Create address if address fields are provided
     if (data.address && data.city) {
       const addressId = nanoid();
-      await db.address.create({
+      await db.addresses.create({
         data: {
           id: addressId,
           customerId,
@@ -118,7 +118,7 @@ export const createCustomerServerFn = createServerFn({ method: "POST" })
       });
     }
 
-    const customer = await db.customer.findUnique({
+    const customer = await db.customers.findUnique({
       where: { id: customerId },
     });
 
@@ -128,7 +128,7 @@ export const createCustomerServerFn = createServerFn({ method: "POST" })
 export const getCustomerByIdServerFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const customer = await db.customer.findUnique({
+    const customer = await db.customers.findUnique({
       where: { id: data.id },
     });
 
@@ -137,7 +137,7 @@ export const getCustomerByIdServerFn = createServerFn({ method: "POST" })
     }
 
     // Get customer addresses
-    const customerAddresses = await db.address.findMany({
+    const customerAddresses = await db.addresses.findMany({
       where: { customerId: data.id },
     });
 
@@ -171,7 +171,7 @@ export const deleteCustomerServerFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     // Check if customer has orders
-    const orderCount = await db.order.count({
+    const orderCount = await db.orders.count({
       where: { customerId: data.id },
     });
 
@@ -182,12 +182,12 @@ export const deleteCustomerServerFn = createServerFn({ method: "POST" })
     }
 
     // Delete customer addresses first (due to foreign key constraint)
-    await db.address.deleteMany({
+    await db.addresses.deleteMany({
       where: { customerId: data.id },
     });
 
     // Delete customer
-    await db.customer.delete({
+    await db.customers.delete({
       where: { id: data.id },
     });
 

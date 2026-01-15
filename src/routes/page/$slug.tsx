@@ -3,8 +3,9 @@ import { ShopLayout } from "@/components/shop/ShopLayout";
 import { getPublicShopSettingsServerFn } from "@/queries/settings";
 import { getPublicNavigationServerFn } from "@/queries/navigation";
 import { getPublicPageBySlugServerFn } from "@/queries/pages";
+import { PageContent } from "@/components/pages/PageContent";
 import { Button } from "@/components/ui/button";
-import { Home, ChevronRight } from "lucide-react";
+import { Home, Calendar } from "lucide-react";
 
 export const Route = createFileRoute("/page/$slug")({
   component: PageDetailPage,
@@ -12,14 +13,12 @@ export const Route = createFileRoute("/page/$slug")({
     const [settings, navigationItems, page] = await Promise.all([
       getPublicShopSettingsServerFn(),
       getPublicNavigationServerFn(),
-      getPublicPageBySlugServerFn({ data: { slug: params.slug } }).catch(() => null),
+      getPublicPageBySlugServerFn({ data: { slug: params.slug } }).catch(
+        () => null
+      ),
     ]);
 
-    // Only show published pages
-    if (!page) {
-      throw notFound();
-    }
-
+    // Don't throw notFound() - handle in component to avoid SSR bug #5960
     return { settings, navigationItems, page };
   },
   head: ({ loaderData }) => {
@@ -52,16 +51,22 @@ export const Route = createFileRoute("/page/$slug")({
   },
   notFoundComponent: () => {
     return (
-      <div className="container mx-auto px-4 py-12">
-        <div className="text-center">
-          <h1 className="text-2xl font-medium text-gray-900 mb-4">
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <span className="text-4xl">404</span>
+          </div>
+          <h1 className="text-2xl font-semibold text-gray-900 mb-3">
             Stranica nije pronađena
           </h1>
-          <p className="text-gray-600 mb-6">
-            Stranica koju tražite ne postoji ili je uklonjena.
+          <p className="text-gray-600 mb-8">
+            Stranica koju tražite ne postoji, premještena je ili je uklonjena.
           </p>
-          <Button asChild variant="outline">
-            <Link to="/">Nazad na početnu</Link>
+          <Button asChild>
+            <Link to="/">
+              <Home className="size-4 mr-2" />
+              Nazad na početnu
+            </Link>
           </Button>
         </div>
       </div>
@@ -72,46 +77,86 @@ export const Route = createFileRoute("/page/$slug")({
 function PageDetailPage() {
   const { settings, navigationItems, page } = Route.useLoaderData();
 
+  // Handle page not found - render 404 UI instead of throwing
+  // This is a workaround for TanStack Start SSR bug #5960
+  if (!page) {
+    return (
+      <ShopLayout settings={settings} navigationItems={navigationItems}>
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="text-center max-w-md mx-auto px-4">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-4xl">404</span>
+            </div>
+            <h1 className="text-2xl font-semibold text-gray-900 mb-3">
+              Stranica nije pronađena
+            </h1>
+            <p className="text-gray-600 mb-8">
+              Stranica koju tražite ne postoji, premještena je ili je uklonjena.
+            </p>
+            <Button asChild>
+              <Link to="/">
+                <Home className="size-4 mr-2" />
+                Nazad na početnu
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </ShopLayout>
+    );
+  }
+
   return (
     <ShopLayout settings={settings} navigationItems={navigationItems}>
-      <main className="container mx-auto px-4 py-8 lg:py-12">
-        {/* Breadcrumb */}
-        <nav className="mb-8" aria-label="Breadcrumb">
-          <ol className="flex items-center gap-1.5 text-sm">
-            <li>
-              <Link
-                to="/"
-                className="text-gray-500 hover:text-gray-900 transition-colors"
-              >
-                <Home className="size-4" />
-              </Link>
-            </li>
-            <ChevronRight className="size-4 text-gray-400" />
-            <li>
-              <span className="text-gray-900 font-medium">{page.title}</span>
-            </li>
-          </ol>
-        </nav>
-
-        {/* Page Content */}
-        <article className="max-w-3xl mx-auto">
-          <header className="mb-8 text-center">
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-              {page.title}
-            </h1>
-            {page.excerpt && (
-              <p className="text-lg text-gray-600">{page.excerpt}</p>
-            )}
-          </header>
-
-          <div className="prose prose-gray max-w-none prose-headings:font-semibold prose-headings:text-gray-900 prose-p:text-gray-600 prose-a:text-primary prose-a:no-underline hover:prose-a:underline">
-            {/* Render content - supports basic HTML or plain text */}
-            <div
-              dangerouslySetInnerHTML={{ __html: page.content }}
-              className="whitespace-pre-line"
-            />
+      <main className="min-h-[60vh]">
+        {/* Hero Section */}
+        <div className="bg-gradient-to-b from-gray-50 to-white border-b">
+          <div className="container mx-auto px-4 py-8 lg:py-12">
+            <div className="max-w-3xl mx-auto">
+              <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 mb-4">
+                {page.title}
+              </h1>
+              {page.excerpt && (
+                <p className="text-lg md:text-xl text-gray-600 leading-relaxed">
+                  {page.excerpt}
+                </p>
+              )}
+              {page.updatedAt && (
+                <div className="flex items-center gap-2 mt-4 text-sm text-gray-500">
+                  <Calendar className="size-4" />
+                  <span>
+                    Ažurirano:{" "}
+                    {new Date(page.updatedAt).toLocaleDateString("hr-HR", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
-        </article>
+        </div>
+
+        {/* Content Section */}
+        <div className="container mx-auto px-4 py-8 lg:py-12">
+          <article className="max-w-3xl mx-auto">
+            <PageContent content={page.content} />
+          </article>
+        </div>
+
+        {/* Back to Home */}
+        <div className="border-t">
+          <div className="container mx-auto px-4 py-8">
+            <div className="max-w-3xl mx-auto">
+              <Button variant="outline" asChild>
+                <Link to="/">
+                  <Home className="size-4 mr-2" />
+                  Nazad na početnu
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </div>
       </main>
     </ShopLayout>
   );
